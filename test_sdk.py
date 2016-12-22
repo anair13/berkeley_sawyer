@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
 import robot_controller
+import robot_recorder
 
 if __name__ == '__main__':
     # main()
-    r = robot_controller.RobotController()
-    r.set_neutral()
+    c = robot_controller.RobotController()
+    r = robot_recorder.RobotRecorder("/media/guser/data/recordings/test.csv", 10)
+    c.set_neutral()
     for i in range(5):
         n = input()
-        j = r.joints[n]
-        r.set_joint_delta(j, 0.1)
+        j = c.joints[n]
+        c.set_joint_delta(j, 0.1)
