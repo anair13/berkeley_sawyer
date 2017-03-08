@@ -9,6 +9,8 @@ import intera_external_devices
 
 from intera_interface import CHECK_VERSION
 
+import numpy as np
+
 class RobotController(object):
 
     def __init__(self):
@@ -19,6 +21,7 @@ class RobotController(object):
         rospy.on_shutdown(self.clean_shutdown)
         rs = intera_interface.RobotEnable(CHECK_VERSION)
         init_state = rs.state().enabled
+        print("Robot enabled...")
 
         self.limb = intera_interface.Limb("right")
     
@@ -30,30 +33,63 @@ class RobotController(object):
         else:
             self.has_gripper = True
 
-        self.joints = self.limb.joint_names()
+        self.joint_names = self.limb.joint_names()
+        print("Done initializing controller.")
 
     def set_joint_delta(self, joint_name, delta):
+        """Move a single joint by a delta"""
         current_position = self.limb.joint_angle(joint_name)
         self.set_joint(joint_name, current_position + delta)
 
     def set_joint(self, joint_name, pos):
+        """Move a single joint to a target position"""
         joint_command = {joint_name: pos}
         self.limb.set_joint_positions(joint_command)
 
-    def set_gripper(action):
-        if has_gripper:
-            if action == "close":
-                gripper.close()
-            elif action == "open":
-                gripper.open()
-            elif action == "calibrate":
-                gripper.calibrate()
+    def set_joints(self, command):
+        """Move joints to commmand"""
+        self.limb.move_to_joint_positions(command)
 
-    def set_neutral(self):
-        self.limb.move_to_neutral()
+    def set_joints_nonblocking(self, command):
+        """Move joints to commmand, resending until reached"""
+        for i in range(100000):
+            self.limb.set_joint_positions(command)
+            current = self.limb.joint_angles()
+            if np.all(abs(distance_between_commands(current, command)) < TOLERANCE):
+                rospy.loginfo("Reached target")
+                break
+        rospy.loginfo("Finished motion")
+
+    def set_gripper(self, action):
+        if self.has_gripper:
+            if action == "close":
+                self.gripper.close()
+            elif action == "open":
+                self.gripper.open()
+            elif action == "calibrate":
+                self.gripper.calibrate()
+
+    def set_neutral(self, speed = .2):
+        # using a custom handpicked neutral position
+        # starting from j0 to j6:
+        neutral_jointangles = [0.412271, -0.434908, -1.198768, 1.795462, 1.160788, 1.107675, 2.068076]
+        cmd = dict(zip(self.joint_names, neutral_jointangles))
+
+        self.limb.set_joint_position_speed(speed)
+        self.set_joints(cmd)
+
+        # self.limb.move_to_neutral()
 
     def clean_shutdown(self):
         print("\nExiting example.")
         # if not init_state:
         #     print("Disabling robot...")
             # rs.disable()
+
+def distance_between_commands(j1, j2):
+    a = []
+    b = []
+    for joint in j1:
+        a.append(j1[joint])
+        b.append(j2[joint])
+    return np.array(a) - np.array(b)
