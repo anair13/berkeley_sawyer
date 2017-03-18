@@ -25,7 +25,7 @@ class RandomPusher(object):
 
         # drive to neutral position:
         self.ctrl.set_neutral()
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         self.num_traj = 10
 
@@ -259,6 +259,7 @@ class RandomPusher(object):
 
 def main():
     pusher = RandomPusher()
+    pusher.run_data_collection()
 
 
 if __name__ == '__main__':

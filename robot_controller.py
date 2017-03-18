@@ -36,6 +36,18 @@ class RobotController(object):
         self.joint_names = self.limb.joint_names()
         print("Done initializing controller.")
 
+        # set gripper
+        try:
+            self.gripper = intera_interface.Gripper("right")
+        except ValueError:
+            rospy.logerr("Could not detect a gripper attached to the robot.")
+            return
+
+        self.gripper.calibrate()
+        self.gripper.set_velocity(self.gripper.MAX_VELOCITY) #"set 100% velocity"),
+        self.gripper.open()
+
+
     def set_joint_delta(self, joint_name, delta):
         """Move a single joint by a delta"""
         current_position = self.limb.joint_angle(joint_name)
@@ -85,6 +97,7 @@ class RobotController(object):
         # if not init_state:
         #     print("Disabling robot...")
             # rs.disable()
+
 
 def distance_between_commands(j1, j2):
     a = []
