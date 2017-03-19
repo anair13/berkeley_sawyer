@@ -14,7 +14,7 @@ from intera_interface import CHECK_VERSION
 
 import thread
 
-class RobotRecorder(object):
+class MainRobotRecorder(object):
     def __init__(self, save_dir, rate=50, start_loop=True):
         """
         Records joint data to a file at a specified rate.

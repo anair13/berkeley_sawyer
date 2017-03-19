@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 
-import robot_controller
-import robot_recorder
-import inverse_kinematics
 import rospy
+
+import inverse_kinematics
+import robot_controller
+from recorder import robot_recorder
+
 
 def main1():
     """Test recording and moving joints by small amounts from keyboard input"""
     c = robot_controller.RobotController()
-    r = robot_recorder.RobotRecorder("/media/guser/data/recordings/test.csv", 10)
+    r = robot_recorder.MainRobotRecorder("/media/guser/data/recordings/test.csv", 10)
     c.set_neutral()
     for i in range(5):
         n = input()
@@ -18,7 +20,7 @@ def main1():
 def main2():
     """Test inverse kinematics positions"""
     c = robot_controller.RobotController()
-    r = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", rate=10)
+    r = robot_recorder.MainRobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", rate=10)
 
     # for d in range(16, 40):
         # D = d / 100.0

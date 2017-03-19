@@ -1,27 +1,24 @@
 #!/usr/bin/env python
-import robot_controller
-import robot_recorder
-import inverse_kinematics
-import rospy
 import numpy as np
 from datetime import datetime
-import pdb
 
-
-
-from sensor_msgs.msg import JointState
-
+import rospy
 from intera_core_msgs.srv import (
     SolvePositionFK,
     SolvePositionFKRequest,
 )
+from sensor_msgs.msg import JointState
+
+import inverse_kinematics
+import robot_controller
+from recorder import robot_recorder
 
 
 class Primitive_Executor(object):
     def __init__(self):
         """Test inverse kinematics positions"""
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", start_loop=False)
+        self.recorder = robot_recorder.MainRobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", start_loop=False)
 
         # drive to neutral position:
         self.ctrl.set_neutral()
