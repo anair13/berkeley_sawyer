@@ -18,7 +18,7 @@ class RandomPusher(object):
     def __init__(self):
         """Test inverse kinematics positions"""
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.MainRobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", start_loop=False)
+        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", start_loop=False)
 
         # drive to neutral position:
         self.ctrl.set_neutral()

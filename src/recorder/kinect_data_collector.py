@@ -14,7 +14,7 @@ import pdb
 
 import thread
 
-from beginner_tutorials.srv import *
+
 
 class KinectRecorder(object):
     def __init__(self, save_dir, rate=10, start_loop=True):
@@ -71,8 +71,6 @@ class KinectRecorder(object):
         # print '90-th percentile at', percentile
         # ## fixing this at 1400
         num = np.clip(num,0, 1400)
-
-        
 
         num = num.astype(np.float32)/ np.max(num) *256
         num = num.astype(np.uint8)
