@@ -125,9 +125,8 @@ class RobotRecorder(object):
         self.ltob.d_img_cropped_8bit = Image.fromarray(img)
 
         # Image.fromarray(img).show()
-
-        if self.start_loop:
-            self.save()
+        # if self.start_loop:
+        #     self.save()
 
 
     def store_latest_im(self, data):
