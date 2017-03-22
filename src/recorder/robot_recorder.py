@@ -44,19 +44,28 @@ class RobotRecorder(object):
 
         if socket.gethostname() is not 'kullback':
             # if node is not running on kullback it is an auxiliary recorder
-            self.aux_recorder = True
+            self.instance_type = 'aux1'
+        else:
+            # instance running on kullback is called main;
+            # them main instance one also records actions and joint angles
+            self.instance_type = 'main'
 
-        if not self.aux_recorder: #if it is running on kullback
+        if self.instance_type =='main': #if it is running on kullback
             self._gripper = None
             self.gripper_name = '_'.join([side, 'gripper'])
             import intera_interface
             self._limb_right = intera_interface.Limb(side)
 
+        prefix = self.instance_type
+
+        rospy.Subscriber(prefix + "/kinect2/hd/image_color", Image_msg, self.store_latest_im)
+        rospy.Subscriber(prefix + "/kinect2/sd/image_depth_rect", Image_msg, self.store_latest_d_im)
+
+
         self.save_dir = save_dir
         self.ltob = Latest_observation()
 
-        rospy.Subscriber("/kinect2/hd/image_color", Image_msg, self.store_latest_im)
-        rospy.Subscriber("/kinect2/sd/image_depth_rect", Image_msg, self.store_latest_d_im)
+
         rospy.sleep(0.5)
 
         self.bridge = CvBridge()
@@ -69,7 +78,7 @@ class RobotRecorder(object):
         self.igrp = 0
 
         # if it is an auxiliary node advertise services
-        if self.aux_recorder:
+        if self.instance_type:
             rospy.init_node('aux_recorder1')
             rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
@@ -166,7 +175,7 @@ class RobotRecorder(object):
 
 
     def init_traj(self, itr):
-        if not self.aux_recorder:
+        if self.instance_type == 'main':
             # request init service for auxiliary recorders
             rospy.wait_for_service('init_traj')
             init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
@@ -200,7 +209,7 @@ class RobotRecorder(object):
         if not os.path.exists(self.depth_image_folder):
             os.makedirs(self.depth_image_folder)
 
-        if not self.aux_recorder:
+        if self.instance_type == 'main':
             self.joint_data_file = traj_folder + '/joint_angles_traj{}'.format(itr)
             joints_right = self._limb_right.joint_names()
             with open(self.joint_data_file, 'w+') as f:
@@ -215,7 +224,7 @@ class RobotRecorder(object):
 
 
     def save(self, i_tr):
-        if not self.aux_recorder:
+        if self.instance_type == 'main':
             # request init service for auxiliary recorders
             rospy.wait_for_service('get_kinectdata')
             get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
@@ -234,7 +243,7 @@ class RobotRecorder(object):
         If a file exists, the function will overwrite existing file.
         """
 
-        if not self.aux_recorder:
+        if self.instance_type == 'main':
 
             joints_right = self._limb_right.joint_names()
             with open(self.joint_data_file, 'a') as f:
@@ -244,21 +253,22 @@ class RobotRecorder(object):
                 f.write("%f," % (self._time_stamp(),))
                 f.write(','.join([str(x) for x in angles_right]) + ',' + temp_str)
 
+        pref = self.instance_type
         #saving image
         # saving the full resolution image
-        image_name =  self.image_folder+"/full_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
+        image_name =  self.image_folder+ "/" + pref + "_full_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
         cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
         # saving the cropped and downsized image
-        image_name = self.image_folder + "/cropped_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_img)
+        image_name = self.image_folder + "/" + pref +"_cropped_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_img)
         self.ltob.img_cropped.save(image_name, "PNG")
 
         # saving the cropped depth data in a Pickle file
-        file = self.depth_image_folder + "/depth_im{0}_time{1}.pkl".format(i_tr, self.ltob.tstamp_d_img)
+        file = self.depth_image_folder + "/" + pref +"_depth_im{0}_time{1}.pkl".format(i_tr, self.ltob.tstamp_d_img)
         cPickle.dump(self.ltob.d_img_cropped_npy, open(file, 'wb'))
 
         # saving downsampled 8bit images
-        image_name = self.depth_image_folder + "/cropped_depth_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_d_img)
+        image_name = self.depth_image_folder + "/" + pref + "_cropped_depth_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_d_img)
         self.ltob.d_img_cropped_8bit.save(image_name, "PNG")
         pdb.set_trace()
 
