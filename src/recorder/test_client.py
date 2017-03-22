@@ -9,9 +9,7 @@ def test_service():
     print 'waiting for service ..'
     rospy.wait_for_service('get_kinectdata')
     while True:
-
         print 'looping ..'
-
 
         try:
             get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
@@ -19,7 +17,6 @@ def test_service():
             resp1 = get_kinectdata_func()
             print 'service call succeeded'
             pdb.set_trace()
-
 
             return
         except rospy.ServiceException, e:

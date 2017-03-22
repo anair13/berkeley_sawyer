@@ -68,6 +68,7 @@ class RobotRecorder(object):
         self.ngroup = 500
         self.igrp = 0
 
+        # if it is an auxiliary node advertise services
         if self.aux_recorder:
             rospy.init_node('aux_recorder1')
             rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
@@ -88,7 +89,7 @@ class RobotRecorder(object):
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
     def init_traj_handler(self, req):
-        self.init_traj(req.itr, req.igrp)
+        self._init_traj_local(req.itr)
 
     def store_latest_d_im(self, data):
         self.ltob.d_img_msg = data
@@ -164,20 +165,32 @@ class RobotRecorder(object):
     def set_igrp(self, igrp):
         self.igrp = igrp
 
+
     def init_traj(self, itr):
+        if not self.aux_recorder:
+            # request init service for auxiliary recorders
+            rospy.wait_for_service('init_traj')
+            init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
+            resp1 = init_traj_func()
+            rospy.loginfo("init srv call succeeded")
+
+        self._init_traj_local(itr)
+
+
+    def _init_traj_local(self, itr):
         """
-        :param itr: number of curren trajecotry
+        :param itr: number of current trajecotry
         :return:
         """
-        if ((itr+1)% self.ngroup) == 0:
-            self.igrp +=1
+
+        if ((itr+1) % self.ngroup) == 0 or self.igrp == 0:
+            self.igrp += 1
+            group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
+
 
         rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
 
-        traj_folder = self.save_dir + '/traj{}'.format(itr)
-        if not self.aux_recorder:
-            self.joint_data_file = traj_folder + '/joint_angles_traj{}'.format(itr)
-
+        traj_folder = group_folder + '/traj{}'.format(itr)
         self.image_folder = traj_folder + '/images'
         self.depth_image_folder = traj_folder + '/depth_images'
 
@@ -189,6 +202,7 @@ class RobotRecorder(object):
             os.makedirs(self.depth_image_folder)
 
         if not self.aux_recorder:
+            self.joint_data_file = traj_folder + '/joint_angles_traj{}'.format(itr)
             joints_right = self._limb_right.joint_names()
             with open(self.joint_data_file, 'w+') as f:
                 f.write('time,')
@@ -200,7 +214,19 @@ class RobotRecorder(object):
         shutil.rmtree(traj_folder)
         print 'deleted {}'.format(traj_folder)
 
-    def _save_local(self, event= None, i_tr = None):
+
+    def save(self, i_tr):
+        if not self.aux_recorder:
+            # request init service for auxiliary recorders
+            rospy.wait_for_service('get_kinectdata')
+            get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
+            resp1 = get_kinectdata_func()
+            rospy.loginfo("get_kinectdata srv call succeeded")
+
+        self._save_local()
+
+
+    def _save_local(self, i_tr = None):
         """
         Records the current joint positions to a csv file if outputFilename was
         provided at construction this function will record the latest set of
