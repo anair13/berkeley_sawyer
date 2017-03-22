@@ -1,4 +1,6 @@
 <launch>
-     <include file="$(find kinect2_bridge)/launch/kinect2_bridge.launch" ns="top" />
-     <node pkg="berkeley_sawyer" type="robot_recorder.py" name="robot_recorder" ns="main"/>
+     <group ns="main">
+          <include file="$(find kinect2_bridge)/launch/kinect2_bridge.launch"/>
+          <node pkg="berkeley_sawyer" type="robot_recorder.py" name="robot_recorder"/>
+     </group>
 </launch>
