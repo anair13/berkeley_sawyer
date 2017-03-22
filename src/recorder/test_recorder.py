@@ -12,11 +12,13 @@ def unit_test():
     rec = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", start_loop=False)
 
     for tr in range(5):
+
         print 'init traj', tr
 
+        rospy.loginfo("starting testnode...")
         rec.init_traj(tr)
-        for i in range(20):
-            rec.save
+        for i in range(1):
+            rec.save()
             pdb.set_trace()
 
 if __name__ == "__main__":

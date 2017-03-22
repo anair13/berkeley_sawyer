@@ -42,7 +42,8 @@ class RobotRecorder(object):
         """
         side = "right"
 
-        if socket.gethostname() is not 'kullback':
+        rospy.loginfo('hostname is :{}'.format(socket.gethostname()))
+        if socket.gethostname() != 'kullback':
             # if node is not running on kullback it is an auxiliary recorder
             self.instance_type = 'aux1'
         else:
@@ -50,11 +51,13 @@ class RobotRecorder(object):
             # them main instance one also records actions and joint angles
             self.instance_type = 'main'
 
+
         if self.instance_type =='main': #if it is running on kullback
             self._gripper = None
             self.gripper_name = '_'.join([side, 'gripper'])
             import intera_interface
             self._limb_right = intera_interface.Limb(side)
+
 
         prefix = self.instance_type
 
@@ -78,23 +81,24 @@ class RobotRecorder(object):
         self.igrp = 0
 
         # if it is an auxiliary node advertise services
-        if self.instance_type:
+        if self.instance_type != 'main':
             rospy.init_node('aux_recorder1')
             rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
             rospy.spin()
         else:
             def spin_thread():
-                print "Recorder intialized."
-                print "started spin thread"
                 rospy.spin()
 
+            pdb.set_trace()
             thread.start_new(spin_thread, ())
+            print "Recorder intialized."
+            print "started spin thread"
+
 
     def get_kinect_handler(self, req):
         self._save_local()
         print 'started service handler'
-
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
     def init_traj_handler(self, req):
@@ -177,6 +181,7 @@ class RobotRecorder(object):
     def init_traj(self, itr):
         if self.instance_type == 'main':
             # request init service for auxiliary recorders
+            rospy.loginfo("waiting for service init_traj...")
             rospy.wait_for_service('init_traj')
             init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
             resp1 = init_traj_func()
@@ -226,13 +231,13 @@ class RobotRecorder(object):
     def save(self, i_tr):
         if self.instance_type == 'main':
             # request init service for auxiliary recorders
+            rospy.loginfo("waiting for service get_kinectdata...")
             rospy.wait_for_service('get_kinectdata')
             get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
             resp1 = get_kinectdata_func()
             rospy.loginfo("get_kinectdata srv call succeeded")
 
         self._save_local()
-
 
     def _save_local(self, i_tr = None):
         """
@@ -274,4 +279,5 @@ class RobotRecorder(object):
 
 
 if __name__ ==  '__main__':
+    print 'started'
     rec = RobotRecorder('/home/guser/Documents/sawyer_data/testrecording')
