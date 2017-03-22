@@ -1,0 +1,5 @@
+<launch>
+     <group ns="test1">
+          <node pkg="berkeley_sawyer" type="robot_recorder.py" name="robot_recorder" />
+     </group>
+</launch>

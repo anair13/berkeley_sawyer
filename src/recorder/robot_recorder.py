@@ -62,12 +62,16 @@ class RobotRecorder(object):
         self.bridge = CvBridge()
 
         # only for testing  !!!!!!!!!!!!!!!!!!!!!!!!
-        self.start_loop = start_loop
-        self.init_traj(i_tr=0)
+        # self.start_loop = start_loop
+        # self.init_traj(itr=0)
+
+        self.ngroup = 500
+        self.igrp = 0
 
         if self.aux_recorder:
             rospy.init_node('aux_recorder1')
-            rospy.Service('get_kinectdata', get_kinectdata, self.service_handler)
+            rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
+            rospy.Service('init_traj', init_traj, self.init_traj_handler)
             rospy.spin()
         else:
             def spin_thread():
@@ -77,11 +81,14 @@ class RobotRecorder(object):
 
             thread.start_new(spin_thread, ())
 
-    def service_handler(self, req):
-        self.save()
+    def get_kinect_handler(self, req):
+        self._save_local()
         print 'started service handler'
 
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
+
+    def init_traj_handler(self, req):
+        self.init_traj(req.itr, req.igrp)
 
     def store_latest_d_im(self, data):
         self.ltob.d_img_msg = data
@@ -154,14 +161,22 @@ class RobotRecorder(object):
         return img
 
 
-    def init_traj(self, i_tr):
+    def set_igrp(self, igrp):
+        self.igrp = igrp
+
+    def init_traj(self, itr):
         """
-        :param i_tr: number of curren trajecotry
+        :param itr: number of curren trajecotry
         :return:
         """
-        traj_folder = self.save_dir + '/traj{}'.format(i_tr)
+        if ((itr+1)% self.ngroup) == 0:
+            self.igrp +=1
+
+        rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
+
+        traj_folder = self.save_dir + '/traj{}'.format(itr)
         if not self.aux_recorder:
-            self.joint_data_file = traj_folder + '/joint_angles_traj{}'.format(i_tr)
+            self.joint_data_file = traj_folder + '/joint_angles_traj{}'.format(itr)
 
         self.image_folder = traj_folder + '/images'
         self.depth_image_folder = traj_folder + '/depth_images'
@@ -185,7 +200,7 @@ class RobotRecorder(object):
         shutil.rmtree(traj_folder)
         print 'deleted {}'.format(traj_folder)
 
-    def save(self, event= None, i_tr = None):
+    def _save_local(self, event= None, i_tr = None):
         """
         Records the current joint positions to a csv file if outputFilename was
         provided at construction this function will record the latest set of

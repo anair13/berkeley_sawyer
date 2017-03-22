@@ -192,7 +192,7 @@ class Primitive_Executor(object):
                 rospy.sleep(.5)
                 raise ValueError
 
-            self.recorder.save(i_tr=i_ac)
+            self.recorder.take_shot(i_tr=i_ac)
 
     def truncate_pos(self, pos):
 
