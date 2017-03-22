@@ -1,8 +1,4 @@
 <launch>
-     <!--<include file="$(find kinect2_bridge)/launch/kinect2_bridge.launch" ns="top" />-->
-     <group ns="kinectbox1">
-          <machine name="kinectbox1" address="kinectbox1" env-loader="/home/guser/.bashrc" user="guser"/>
-          <node machine="kinectbox1" pkg="berkeley_sawyer" type="robot_recorder.py" name="robot_recorder"/>
-          <!--<include file="$(find kinect2_bridge)/launch/kinect2_bridge.launch" ns="right" />-->
-     </group>
+     <include file="$(find kinect2_bridge)/launch/kinect2_bridge.launch" ns="right" />
+     <node pkg="berkeley_sawyer" type="robot_recorder.py" name="robot_recorder" ns="aux1"/>
 </launch>

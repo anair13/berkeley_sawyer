@@ -5,7 +5,7 @@ import rospy
 from berkeley_sawyer.srv import *
 import pdb
 
-from recorder import robot_recorder
+import robot_recorder
 
 def unit_test():
 
