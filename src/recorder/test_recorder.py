@@ -17,7 +17,8 @@ def unit_test():
 
         rospy.loginfo("starting testnode...")
         rec.init_traj(tr)
-        for i in range(1):
+        for i in range(3):
+            rospy.loginfo("saving image {}".format(i))
             rec.save()
             pdb.set_trace()
 

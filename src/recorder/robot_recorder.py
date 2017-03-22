@@ -83,6 +83,7 @@ class RobotRecorder(object):
         # if it is an auxiliary node advertise services
         if self.instance_type != 'main':
             rospy.init_node('aux_recorder1')
+            rospy.loginfo("init node aux_recorder1")
             rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
             rospy.spin()
@@ -98,10 +99,11 @@ class RobotRecorder(object):
 
     def get_kinect_handler(self, req):
         self._save_local()
-        print 'started service handler'
+        rospy.loginfo('started get_kinect data service handler')
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
     def init_traj_handler(self, req):
+        rospy.loginfo('started init_traj data service handler')
         self._init_traj_local(req.itr)
 
     def store_latest_d_im(self, data):
@@ -230,7 +232,7 @@ class RobotRecorder(object):
 
     def save(self, i_tr):
         if self.instance_type == 'main':
-            # request init service for auxiliary recorders
+            # request save at auxiliary recorders
             rospy.loginfo("waiting for service get_kinectdata...")
             rospy.wait_for_service('get_kinectdata')
             get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
