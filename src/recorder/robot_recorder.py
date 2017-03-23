@@ -243,6 +243,8 @@ class RobotRecorder(object):
 
         self._save_local()
 
+
+
     def _save_local(self, i_tr = None):
         """
         Records the current joint positions to a csv file if outputFilename was
@@ -265,6 +267,7 @@ class RobotRecorder(object):
         pref = self.instance_type
         #saving image
         # saving the full resolution image
+
         image_name =  self.image_folder+ "/" + pref + "_full_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
         cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
