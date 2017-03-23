@@ -73,10 +73,6 @@ class RobotRecorder(object):
 
         self.bridge = CvBridge()
 
-        # only for testing  !!!!!!!!!!!!!!!!!!!!!!!!
-        # self.start_loop = start_loop
-        # self.init_traj(itr=0)
-
         self.ngroup = 500
         self.igrp = 0
 
@@ -268,21 +264,33 @@ class RobotRecorder(object):
         pref = self.instance_type
         #saving image
         # saving the full resolution image
-
-        image_name =  self.image_folder+ "/" + pref + "_full_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
-        cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        if self.ltob.img_cv2 == None:
+            image_name =  self.image_folder+ "/" + pref + "_full_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
+            cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        else:
+            raise ValueError('no data received')
 
         # saving the cropped and downsized image
-        image_name = self.image_folder + "/" + pref +"_cropped_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_img)
-        self.ltob.img_cropped.save(image_name, "PNG")
+        if self.ltob.img_cropped == None:
+            image_name = self.image_folder + "/" + pref +"_cropped_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_img)
+            self.ltob.img_cropped.save(image_name, "PNG")
+        else:
+            raise ValueError('no data received')
 
+        # saving the depth data
         # saving the cropped depth data in a Pickle file
-        file = self.depth_image_folder + "/" + pref +"_depth_im{0}_time{1}.pkl".format(i_tr, self.ltob.tstamp_d_img)
-        cPickle.dump(self.ltob.d_img_cropped_npy, open(file, 'wb'))
+        if self.ltob.d_img_cropped_npy == None:
+            file = self.depth_image_folder + "/" + pref +"_depth_im{0}_time{1}.pkl".format(i_tr, self.ltob.tstamp_d_img)
+            cPickle.dump(self.ltob.d_img_cropped_npy, open(file, 'wb'))
+        else:
+            raise ValueError('no data received')
 
         # saving downsampled 8bit images
-        image_name = self.depth_image_folder + "/" + pref + "_cropped_depth_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_d_img)
-        self.ltob.d_img_cropped_8bit.save(image_name, "PNG")
+        if self.ltob.d_img_cropped_8bit == None:
+            image_name = self.depth_image_folder + "/" + pref + "_cropped_depth_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_d_img)
+            self.ltob.d_img_cropped_8bit.save(image_name, "PNG")
+        else:
+            raise ValueError('no data received')
 
 
 if __name__ ==  '__main__':

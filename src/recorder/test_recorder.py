@@ -16,6 +16,7 @@ def unit_test():
         print 'init traj', tr
 
         rec.init_traj(tr)
+        rospy.sleep(1)
 
         # rec.init_traj(tr)
         for i in range(3):
