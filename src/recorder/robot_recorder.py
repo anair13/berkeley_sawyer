@@ -104,6 +104,7 @@ class RobotRecorder(object):
     def init_traj_handler(self, req):
         rospy.loginfo('started init_traj data service handler')
         self._init_traj_local(req.itr)
+        return init_trajResponse()
 
     def store_latest_d_im(self, data):
         # rospy.loginfo('storing depth image')
