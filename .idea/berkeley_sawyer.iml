@@ -4,6 +4,7 @@
     <content url="file://$MODULE_DIR$" />
     <content url="file://$MODULE_DIR$/../intera_sdk" />
     <content url="file://$USER_HOME$/sawyer_data" />
+    <content url="file:///opt/ros/indigo/lib/python2.7/dist-packages" />
     <orderEntry type="jdk" jdkName="Python 2.7.6 (/usr/bin/python2.7)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
