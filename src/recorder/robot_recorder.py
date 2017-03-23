@@ -84,6 +84,8 @@ class RobotRecorder(object):
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
             rospy.spin()
         else:
+            self.get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
+            self.init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
             def spin_thread():
                 rospy.spin()
 
@@ -104,6 +106,7 @@ class RobotRecorder(object):
 
     def store_latest_d_im(self, data):
         # rospy.loginfo('storing depth image')
+        self.ltob.tstamp_d_img = rospy.get_time()
 
         self.ltob.d_img_msg = data
         cv_image = self.bridge.imgmsg_to_cv2(data, '16UC1')
@@ -117,7 +120,6 @@ class RobotRecorder(object):
         # print 'max', np.max(img)
         # print 'min', np.min(img)
         # print '----------------------'
-        self.ltob.tstamp_d_img = rospy.get_time()
 
         # percentile = np.percentile(num, 90)
         # print '90-th percentile at', percentile
@@ -182,11 +184,12 @@ class RobotRecorder(object):
     def init_traj(self, itr):
         if self.instance_type == 'main':
             # request init service for auxiliary recorders
-            rospy.loginfo("waiting for service init_traj...")
-            rospy.wait_for_service('init_traj')
-            init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
-            resp1 = init_traj_func()
-            rospy.loginfo("init srv call succeeded")
+            try:
+                rospy.wait_for_service('init_traj', timeout=0.05)
+                resp1 = self.init_traj_func(itr)
+            except (rospy.ServiceException, rospy.ROSException), e:
+                rospy.logerr("Service call failed: %s" % (e,))
+                raise ValueError('get_kinectdata service failed')
 
         self._init_traj_local(itr)
 
@@ -198,10 +201,9 @@ class RobotRecorder(object):
         """
 
         group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
-        if ((itr+1) % self.ngroup) == 0 or self.igrp == 0:
-            self.igrp += 1
-
         rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
+        if ((itr+1) % self.ngroup) == 0:
+            self.igrp += 1
 
         traj_folder = group_folder + '/traj{}'.format(itr)
         self.image_folder = traj_folder + '/images'
@@ -229,20 +231,37 @@ class RobotRecorder(object):
 
 
     def save(self, i_tr):
+        t_savereq = rospy.get_time()
         if self.instance_type == 'main':
             # request save at auxiliary recorders
-            rospy.loginfo("waiting for service get_kinectdata...")
-            rospy.wait_for_service('get_kinectdata')
-            get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
-            resp1 = get_kinectdata_func()
-            rospy.loginfo("get_kinectdata srv call succeeded")
+            try:
+                rospy.wait_for_service('get_kinectdata', 0.05)
+                resp1 = self.get_kinectdata_func()
+            except (rospy.ServiceException, rospy.ROSException), e:
+                rospy.logerr("Service call failed: %s" % (e,))
+                raise ValueError('get_kinectdata service failed')
 
         try:
-            self._save_local()
+            self._save_local(i_tr)
         except ValueError:
             return
 
-    def _save_local(self, i_tr = None):
+        # timing statistics:
+        if self.instance_type == 'main':
+            delta_req_store_dimage = self.ltob.tstamp_d_img - t_savereq
+            rospy.loginfo("time between last stored depthimage and save request: {}"
+                          .format(delta_req_store_dimage))
+
+            delta_req_store_image = self.ltob.tstamp_img - t_savereq
+            rospy.loginfo("time between last stored image and save request: {}"
+                          .format(delta_req_store_image))
+
+            complete_time_save = rospy.get_time() - t_savereq
+            rospy.loginfo("complete time for saving: {}"
+                          .format(complete_time_save))
+
+
+    def _save_local(self, i_tr):
         """
         Records the current joint positions to a csv file if outputFilename was
         provided at construction this function will record the latest set of
