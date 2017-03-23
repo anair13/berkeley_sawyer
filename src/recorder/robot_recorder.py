@@ -262,7 +262,7 @@ class RobotRecorder(object):
                 temp_str = '' if self._gripper else '\n'
                 angles_right = [self._limb_right.joint_angle(j)
                                 for j in joints_right]
-                f.write("%f," % (self._time_stamp(),))
+                f.write("%f," % (rospy.get_time(),))
                 f.write(','.join([str(x) for x in angles_right]) + ',' + temp_str)
 
         pref = self.instance_type
