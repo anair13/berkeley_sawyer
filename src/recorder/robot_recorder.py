@@ -107,6 +107,8 @@ class RobotRecorder(object):
         self._init_traj_local(req.itr)
 
     def store_latest_d_im(self, data):
+        rospy.loginfo('storing depth image')
+
         self.ltob.d_img_msg = data
         cv_image = self.bridge.imgmsg_to_cv2(data, '16UC1')
 
@@ -145,6 +147,7 @@ class RobotRecorder(object):
 
 
     def store_latest_im(self, data):
+        rospy.loginfo('storing color image')
         self.ltob.img_msg = data
         self.ltob.tstamp_img = rospy.get_time()
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")  #(1920, 1080)

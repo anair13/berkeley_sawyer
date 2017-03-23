@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="berkeley_sawyer" type="robot_recorder.py" name="robot_recorder" output="log"/>
+</launch>

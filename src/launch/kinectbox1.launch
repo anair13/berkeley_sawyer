@@ -1,8 +1,10 @@
 <launch>
-     <include file="$(find kinect2_bridge)/launch/kinect2_bridge.launch" ns="aux1">
+    <node pkg="berkeley_sawyer" type="robot_recorder.py" name="robot_recorder"/>
+
+    <include file="$(find kinect2_bridge)/launch/kinect2_bridge.launch" ns="aux1">
           <arg name="depth_method" value="opengl" />
           <arg name="reg_method" value="cpu" />
-     </include>
+    </include>
 
-     <node pkg="berkeley_sawyer" type="robot_recorder.py" name="robot_recorder"/>
+
 </launch>
