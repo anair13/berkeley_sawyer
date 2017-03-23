@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
 from datetime import datetime
-
+import pdb
 import rospy
 from intera_core_msgs.srv import (
     SolvePositionFK,
@@ -20,7 +20,8 @@ class Traj_aborted_except(Exception):
 class Primitive_Executor(object):
     def __init__(self):
 
-        self.num_traj = 10
+        self.num_traj = 500
+
         self.num_actions = 14  # length of actino sequence positions on trajectory
         self.state_sequence_length = self.num_actions + 1
 
@@ -120,10 +121,8 @@ class Primitive_Executor(object):
         for i_ac in range(self.num_actions):
 
             #sample action type:
-            action = np.random.randint(0,4)
-
             noptions = 3
-            np.random.choice(range(noptions), p=[0.6, 0.2, 0.2])
+            action = np.random.choice(range(noptions), p=[0.80, 0.1, 0.1])
 
             print 'step ', i_ac
 
@@ -153,7 +152,7 @@ class Primitive_Executor(object):
                 delta_up = .1
                 next_wypt[2] = lower_height + delta_up
                 gripper_up = True
-                print 'up!'
+                print 'stay up for ', up_nstep
             else:
                 up_nstep = 0
 
@@ -183,8 +182,6 @@ class Primitive_Executor(object):
                                    1 if action == 2 else 0,  # up nstep
                                    up_nstep
                                    ])
-            print 'action vector:', action_vec
-
             self.recorder.save(i_ac, action_vec)
 
             desired_pose = inverse_kinematics.get_pose_stamped(next_wypt[0],
@@ -214,10 +211,13 @@ class Primitive_Executor(object):
                 rospy.sleep(.5)
                 raise Traj_aborted_except('raising Traj_aborted_except')
 
+
         # after completing trajectory save final state
         i_ac += 1
         action_vec= np.zeros_like(action_vec)
         self.recorder.save(i_ac, action_vec)
+
+        # pdb.set_trace()
 
 
     def truncate_pos(self, pos):

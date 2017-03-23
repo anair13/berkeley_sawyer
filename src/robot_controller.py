@@ -88,7 +88,15 @@ class RobotController(object):
         cmd = dict(zip(self.joint_names, neutral_jointangles))
 
         self.limb.set_joint_position_speed(speed)
-        self.set_joints(cmd)
+
+        done = False
+        while not done:
+            try:
+                self.set_joints(cmd)
+            except:
+                print 'retrying set neutral...'
+
+            done = True
 
         # self.limb.move_to_neutral()
 

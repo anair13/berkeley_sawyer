@@ -72,7 +72,7 @@ class RobotRecorder(object):
 
         self.bridge = CvBridge()
 
-        self.ngroup = 3
+        self.ngroup = 1000
         self.igrp = 0
 
         # if it is an auxiliary node advertise services
@@ -240,7 +240,6 @@ class RobotRecorder(object):
                             for j in joints_right]
             f.write("%f," % (rospy.get_time(),))
             values = np.concatenate([angles_right, action])
-            pdb.set_trace()
             f.write(','.join([str(x) for x in values]) + '\n')
 
         self.joint_angle_list.append(angles_right)
