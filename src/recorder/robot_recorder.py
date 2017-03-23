@@ -199,7 +199,7 @@ class RobotRecorder(object):
 
         if ((itr+1) % self.ngroup) == 0 or self.igrp == 0:
             self.igrp += 1
-            group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
+        group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
 
 
         rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
@@ -238,9 +238,10 @@ class RobotRecorder(object):
             resp1 = get_kinectdata_func()
             rospy.loginfo("get_kinectdata srv call succeeded")
 
-        self._save_local()
-
-
+        try:
+            self._save_local()
+        except ValueError:
+            return
 
     def _save_local(self, i_tr = None):
         """
