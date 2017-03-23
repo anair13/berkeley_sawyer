@@ -14,17 +14,26 @@ import robot_controller
 from recorder import robot_recorder
 
 
+class Traj_aborted_except(Exception):
+    pass
+
 class Primitive_Executor(object):
     def __init__(self):
-        """Test inverse kinematics positions"""
+
+        self.num_traj = 10
+        self.num_actions = 14  # length of actino sequence positions on trajectory
+        self.state_sequence_length = self.num_actions + 1
+
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", start_loop=False)
+        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording",
+                                                     start_loop=False,
+                                                     seq_len = self.state_sequence_length)
 
         # drive to neutral position:
         self.ctrl.set_neutral()
         import pdb; pdb.set_trace()
 
-        self.num_traj = 10
+
 
 
         limb = 'right'
@@ -42,9 +51,9 @@ class Primitive_Executor(object):
             done = False
             while not done:
                 try:
-                    self.run_trajectory_smooth(tr)
+                    self.run_trajectory(tr)
                     done = True
-                except ValueError:
+                except Traj_aborted_except:
                     self.recorder.delete(tr)
 
             delta = datetime.now() - tstart
@@ -85,7 +94,7 @@ class Primitive_Executor(object):
         return pos
 
 
-    def run_trajectory_smooth(self, i_tr):
+    def run_trajectory(self, i_tr):
 
         self.ctrl.set_neutral(speed= 0.2)
         self.ctrl.gripper.open()
@@ -93,11 +102,8 @@ class Primitive_Executor(object):
         gripper_up = True
 
 
-        next_wypt = self.get_endeffector_pos()
-
         self.recorder.init_traj(i_tr)
 
-        num_actions = 15  # number of different positions on trajectory
 
         lower_height = 0.22
 
@@ -111,9 +117,7 @@ class Primitive_Executor(object):
         close_nstep, tclose, up_nstep, t_up = 0, 0, 0, 0
         next_wypt = np.array([des_pos[0], des_pos[1], lower_height])
 
-        for i_ac in range(num_actions):
-
-            start_joints = self.ctrl.limb.joint_angles()
+        for i_ac in range(self.num_actions):
 
             #sample action type:
             action = np.random.randint(0,4)
@@ -121,32 +125,38 @@ class Primitive_Executor(object):
             noptions = 3
             np.random.choice(range(noptions), p=[0.6, 0.2, 0.2])
 
-
             print 'step ', i_ac
 
-            if i_ac > 0:
-                if action == 0:
-                    maxshift = .1
-                    des_pos += np.random.uniform(-maxshift, maxshift, 2)
-                    des_pos = self.truncate_pos(des_pos)# make sure not outside defined region
-                    next_wypt[0] = des_pos[0]
-                    next_wypt[1] = des_pos[1]
-                    print 'move to ', next_wypt
+            if action == 0:
+                maxshift = .1
+                posshift = np.random.uniform(-maxshift, maxshift, 2)
+                des_pos += posshift
+                des_pos = self.truncate_pos(des_pos)# make sure not outside defined region
+                next_wypt[0] = des_pos[0]
+                next_wypt[1] = des_pos[1]
+                print 'move to ', next_wypt
+            else:
+                posshift = np.zeros(2)
 
-                elif action == 1:   # close gripper and hold for n steps
-                    close_nstep = np.random.randint(0, 6)
-                    print 'close and hold for ', close_nstep
-                    tclose = i_ac
-                    self.ctrl.gripper.close()
-                    gripper_closed = True
+            if action == 1:   # close gripper and hold for n steps
+                close_nstep = np.random.randint(1, 6)
+                print 'close and hold for ', close_nstep
+                tclose = i_ac
+                self.ctrl.gripper.close()
+                gripper_closed = True
+            else:
+                close_nstep = 0
 
-                elif action == 2:  # go up for n steps
-                    up_nstep = np.random.randint(0, 6)
-                    t_up = i_ac
-                    delta_up = .1
-                    next_wypt[2] = lower_height + delta_up
-                    gripper_up = True
-                    print 'up!'
+            if action == 2:  # go up for n steps
+                up_nstep = np.random.randint(1, 6)
+                t_up = i_ac
+                delta_up = .1
+                next_wypt[2] = lower_height + delta_up
+                gripper_up = True
+                print 'up!'
+            else:
+                up_nstep = 0
+
 
             if gripper_closed:
                 if i_ac > (tclose + close_nstep):
@@ -163,13 +173,25 @@ class Primitive_Executor(object):
                     gripper_up = False
 
 
-            print 'holding force', self.ctrl.gripper.get_force()
+            # print 'holding force', self.ctrl.gripper.get_force()
 
+            action_vec = np.array([1 if action==0 else 0,  # move
+                                   posshift[0],
+                                   posshift[1],
+                                   1 if action == 1 else 0, # close
+                                   close_nstep,
+                                   1 if action == 2 else 0,  # up nstep
+                                   up_nstep
+                                   ])
+            print 'action vector:', action_vec
+
+            self.recorder.save(i_ac, action_vec)
 
             desired_pose = inverse_kinematics.get_pose_stamped(next_wypt[0],
                                                                next_wypt[1],
                                                                next_wypt[2],
                                                                inverse_kinematics.EXAMPLE_O)
+            start_joints = self.ctrl.limb.joint_angles()
             try:
                 cmd = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
                                                           use_advanced_options=True)
@@ -178,21 +200,25 @@ class Primitive_Executor(object):
                              'going to reset robot...')
                 current_joints = self.ctrl.limb.joint_angles()
                 self.ctrl.limb.move_to_joint_positions(current_joints)
-                raise ValueError
+                raise Traj_aborted_except('raising Traj_aborted_except')
 
             try:
                 self.ctrl.limb.move_to_joint_positions(cmd, timeout=2.)
             except OSError:
                 rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
                 rospy.sleep(.5)
-                raise ValueError
+                raise Traj_aborted_except('raising Traj_aborted_except')
 
             if self.ctrl.limb.has_collided():
                 rospy.logerr('collision detected!!!')
                 rospy.sleep(.5)
-                raise ValueError
+                raise Traj_aborted_except('raising Traj_aborted_except')
 
-            self.recorder.take_shot(i_tr=i_ac)
+        # after completing trajectory save final state
+        i_ac += 1
+        action_vec= np.zeros_like(action_vec)
+        self.recorder.save(i_ac, action_vec)
+
 
     def truncate_pos(self, pos):
 

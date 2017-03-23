@@ -31,7 +31,7 @@ class Latest_observation(object):
 
 
 class RobotRecorder(object):
-    def __init__(self, save_dir, rate=50, start_loop=False):
+    def __init__(self, save_dir, rate=50, start_loop=False, seq_len = None):
         """
         Records joint data to a file at a specified rate.
         rate: recording frequency in Hertz
@@ -41,6 +41,7 @@ class RobotRecorder(object):
         :param whether the recorder instance is an auxiliary recorder
         """
         side = "right"
+        self.state_sequence_length = seq_len
 
         rospy.loginfo('hostname is :{}'.format(socket.gethostname()))
         if socket.gethostname() != 'kullback':
@@ -92,10 +93,11 @@ class RobotRecorder(object):
             thread.start_new(spin_thread, ())
             print "Recorder intialized."
             print "started spin thread"
+            self.action_list, self.joint_angle_list = [], []
 
 
     def get_kinect_handler(self, req):
-        self._save_local(req.itr)
+        self._save_img_local(req.itr)
         rospy.loginfo('started get_kinect data service handler')
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
@@ -211,18 +213,44 @@ class RobotRecorder(object):
 
         if not os.path.exists(traj_folder):
             os.makedirs(traj_folder)
+        else:
+            raise ValueError("trajectory {} already exists".format(traj_folder))
         if not os.path.exists(self.image_folder):
             os.makedirs(self.image_folder)
         if not os.path.exists(self.depth_image_folder):
             os.makedirs(self.depth_image_folder)
 
         if self.instance_type == 'main':
-            self.joint_data_file = traj_folder + '/joint_angles_traj{}'.format(itr)
+            self.state_action_data_file = traj_folder + '/joint_angles_traj{}.txt'.format(itr)
+            self.state_action_pkl_file = traj_folder + '/joint_angles_traj{}.pkl'.format(itr)
             joints_right = self._limb_right.joint_names()
-            with open(self.joint_data_file, 'w+') as f:
+            with open(self.state_action_data_file, 'w+') as f:
                 f.write('time,')
-                temp_str = '' if self._gripper else '\n'
-                f.write(','.join([j for j in joints_right]) + ',' + temp_str)
+                action_names = ['move','val_move_x','val_move_y','close','val_close','up','val_up']
+                captions = joints_right + action_names
+                f.write(','.join(captions) + ',' + '\n')
+
+    def _save_state_actions(self, i_tr, action):
+        joints_right = self._limb_right.joint_names()
+        with open(self.state_action_data_file, 'a') as f:
+            angles_right = [self._limb_right.joint_angle(j)
+                            for j in joints_right]
+            f.write("%f," % (rospy.get_time(),))
+            values = angles_right + action
+            f.write(','.join([str(x) for x in values]) + ',' + '\n')
+
+        self.joint_angle_list.append(angles_right)
+        self.action_list.append(action)
+
+        if i_tr == self.state_sequence_length-1:
+            joint_angles = np.stack(self.joint_angle_list)
+            actions = np.stack(self.action_list)
+
+            with open(self.state_action_pkl_file, 'wb') as f:
+                dict= {'jointangles': joint_angles,
+                       'actions': actions}
+                cPickle.dump(dict, f)
+
 
     def delete(self, i_tr):
         traj_folder = self.save_dir + '/traj{}'.format(i_tr)
@@ -230,7 +258,7 @@ class RobotRecorder(object):
         print 'deleted {}'.format(traj_folder)
 
 
-    def save(self, i_tr):
+    def save(self, i_tr, action):
         t_savereq = rospy.get_time()
         assert self.instance_type == 'main'
 
@@ -243,42 +271,29 @@ class RobotRecorder(object):
             raise ValueError('get_kinectdata service failed')
 
         try:
-            self._save_local(i_tr)
+            self._save_img_local(i_tr)
+            self._save_state_actions(i_tr, action)
         except ValueError:
             return
 
         # timing statistics:
-        delta_req_store_dimage = self.ltob.tstamp_d_img - t_savereq
-        rospy.loginfo("time between last stored depthimage and save request: {}"
-                      .format(delta_req_store_dimage))
+        tstat = False
+        if tstat:
+            delta_req_store_dimage = self.ltob.tstamp_d_img - t_savereq
+            rospy.loginfo("time between last stored depthimage and save request: {}"
+                          .format(delta_req_store_dimage))
 
-        delta_req_store_image = self.ltob.tstamp_img - t_savereq
-        rospy.loginfo("time between last stored image and save request: {}"
-                      .format(delta_req_store_image))
+            delta_req_store_image = self.ltob.tstamp_img - t_savereq
+            rospy.loginfo("time between last stored image and save request: {}"
+                          .format(delta_req_store_image))
 
-        complete_time_save = rospy.get_time() - t_savereq
-        rospy.loginfo("complete time for saving: {}"
-                      .format(complete_time_save))
+            complete_time_save = rospy.get_time() - t_savereq
+            rospy.loginfo("complete time for saving: {}"
+                          .format(complete_time_save))
 
 
-    def _save_local(self,i_tr):
-        """
-        Records the current joint positions to a csv file if outputFilename was
-        provided at construction this function will record the latest set of
-        joint angles in a csv format.
 
-        If a file exists, the function will overwrite existing file.
-        """
-
-        if self.instance_type == 'main':
-
-            joints_right = self._limb_right.joint_names()
-            with open(self.joint_data_file, 'a') as f:
-                temp_str = '' if self._gripper else '\n'
-                angles_right = [self._limb_right.joint_angle(j)
-                                for j in joints_right]
-                f.write("%f," % (rospy.get_time(),))
-                f.write(','.join([str(x) for x in angles_right]) + ',' + temp_str)
+    def _save_img_local(self, i_tr):
 
         pref = self.instance_type
         #saving image
