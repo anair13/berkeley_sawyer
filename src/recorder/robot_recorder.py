@@ -197,10 +197,9 @@ class RobotRecorder(object):
         :return:
         """
 
+        group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
         if ((itr+1) % self.ngroup) == 0 or self.igrp == 0:
             self.igrp += 1
-        group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
-
 
         rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
 
@@ -265,33 +264,33 @@ class RobotRecorder(object):
         pref = self.instance_type
         #saving image
         # saving the full resolution image
-        if self.ltob.img_cv2 == None:
+        if self.ltob.img_cv2 is not None:
             image_name =  self.image_folder+ "/" + pref + "_full_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
             cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
         else:
-            raise ValueError('no data received')
+            raise ValueError('img_cv2 no data received')
 
         # saving the cropped and downsized image
-        if self.ltob.img_cropped == None:
+        if self.ltob.img_cropped is not None:
             image_name = self.image_folder + "/" + pref +"_cropped_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_img)
             self.ltob.img_cropped.save(image_name, "PNG")
         else:
-            raise ValueError('no data received')
+            raise ValueError('img_cropped no data received')
 
         # saving the depth data
         # saving the cropped depth data in a Pickle file
-        if self.ltob.d_img_cropped_npy == None:
+        if self.ltob.d_img_cropped_npy is not None:
             file = self.depth_image_folder + "/" + pref +"_depth_im{0}_time{1}.pkl".format(i_tr, self.ltob.tstamp_d_img)
             cPickle.dump(self.ltob.d_img_cropped_npy, open(file, 'wb'))
         else:
-            raise ValueError('no data received')
+            raise ValueError('d_img_cropped_npy no data received')
 
         # saving downsampled 8bit images
-        if self.ltob.d_img_cropped_8bit == None:
+        if self.ltob.d_img_cropped_8bit is not None:
             image_name = self.depth_image_folder + "/" + pref + "_cropped_depth_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_d_img)
             self.ltob.d_img_cropped_8bit.save(image_name, "PNG")
         else:
-            raise ValueError('no data received')
+            raise ValueError('d_img_cropped_8bit no data received')
 
 
 if __name__ ==  '__main__':
