@@ -42,6 +42,7 @@ class RobotRecorder(object):
         """
         side = "right"
         self.state_sequence_length = seq_len
+        self.overwrite = True
 
         rospy.loginfo('hostname is :{}'.format(socket.gethostname()))
         if socket.gethostname() != 'kullback':
@@ -202,19 +203,21 @@ class RobotRecorder(object):
         :return:
         """
 
-        group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
+        self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
+
         rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
         if ((itr+1) % self.ngroup) == 0:
             self.igrp += 1
 
-        traj_folder = group_folder + '/traj{}'.format(itr)
+        traj_folder = self.group_folder + '/traj{}'.format(itr)
         self.image_folder = traj_folder + '/images'
         self.depth_image_folder = traj_folder + '/depth_images'
 
         if not os.path.exists(traj_folder):
             os.makedirs(traj_folder)
         else:
-            raise ValueError("trajectory {} already exists".format(traj_folder))
+            if not self.overwrite:
+                raise ValueError("trajectory {} already exists".format(traj_folder))
         if not os.path.exists(self.image_folder):
             os.makedirs(self.image_folder)
         if not os.path.exists(self.depth_image_folder):
@@ -236,8 +239,9 @@ class RobotRecorder(object):
             angles_right = [self._limb_right.joint_angle(j)
                             for j in joints_right]
             f.write("%f," % (rospy.get_time(),))
-            values = angles_right + action
-            f.write(','.join([str(x) for x in values]) + ',' + '\n')
+            values = np.concatenate([angles_right, action])
+            pdb.set_trace()
+            f.write(','.join([str(x) for x in values]) + '\n')
 
         self.joint_angle_list.append(angles_right)
         self.action_list.append(action)
@@ -253,10 +257,9 @@ class RobotRecorder(object):
 
 
     def delete(self, i_tr):
-        traj_folder = self.save_dir + '/traj{}'.format(i_tr)
+        traj_folder = self.group_folder + '/traj{}'.format(i_tr)
         shutil.rmtree(traj_folder)
         print 'deleted {}'.format(traj_folder)
-
 
     def save(self, i_tr, action):
         t_savereq = rospy.get_time()
