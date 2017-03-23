@@ -95,7 +95,7 @@ class RobotRecorder(object):
 
 
     def get_kinect_handler(self, req):
-        self._save_local()
+        self._save_local(req.itr)
         rospy.loginfo('started get_kinect data service handler')
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
@@ -182,14 +182,14 @@ class RobotRecorder(object):
 
 
     def init_traj(self, itr):
-        if self.instance_type == 'main':
-            # request init service for auxiliary recorders
-            try:
-                rospy.wait_for_service('init_traj', timeout=0.05)
-                resp1 = self.init_traj_func(itr)
-            except (rospy.ServiceException, rospy.ROSException), e:
-                rospy.logerr("Service call failed: %s" % (e,))
-                raise ValueError('get_kinectdata service failed')
+        assert self.instance_type == 'main'
+        # request init service for auxiliary recorders
+        try:
+            rospy.wait_for_service('init_traj', timeout=0.05)
+            resp1 = self.init_traj_func(itr)
+        except (rospy.ServiceException, rospy.ROSException), e:
+            rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('get_kinectdata service failed')
 
         self._init_traj_local(itr)
 
@@ -231,15 +231,17 @@ class RobotRecorder(object):
 
 
     def save(self, i_tr):
+
         t_savereq = rospy.get_time()
-        if self.instance_type == 'main':
-            # request save at auxiliary recorders
-            try:
-                rospy.wait_for_service('get_kinectdata', 0.05)
-                resp1 = self.get_kinectdata_func()
-            except (rospy.ServiceException, rospy.ROSException), e:
-                rospy.logerr("Service call failed: %s" % (e,))
-                raise ValueError('get_kinectdata service failed')
+        assert self.instance_type == 'main'
+
+        # request save at auxiliary recorders
+        try:
+            rospy.wait_for_service('get_kinectdata', 0.05)
+            resp1 = self.get_kinectdata_func()
+        except (rospy.ServiceException, rospy.ROSException), e:
+            rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('get_kinectdata service failed')
 
         try:
             self._save_local(i_tr)
@@ -261,7 +263,7 @@ class RobotRecorder(object):
                           .format(complete_time_save))
 
 
-    def _save_local(self, i_tr):
+    def _save_local(self,i_tr):
         """
         Records the current joint positions to a csv file if outputFilename was
         provided at construction this function will record the latest set of

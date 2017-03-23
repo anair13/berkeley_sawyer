@@ -16,13 +16,13 @@ def unit_test():
         print 'init traj', tr
 
         rec.init_traj(tr)
-        rospy.sleep(1)
+        rospy.sleep(.5)
 
         # rec.init_traj(tr)
         for i in range(3):
             rospy.loginfo("saving image {}".format(i))
             rec.save(i)
-            rospy.sleep(2)
+            rospy.sleep(.5)
 
 
 
