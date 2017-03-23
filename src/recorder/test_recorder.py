@@ -11,7 +11,7 @@ def unit_test():
 
     rec = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", start_loop=False)
 
-    for tr in range(5):
+    for tr in range(6):
 
         print 'init traj', tr
 

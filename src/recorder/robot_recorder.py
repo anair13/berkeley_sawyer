@@ -68,27 +68,27 @@ class RobotRecorder(object):
         self.save_dir = save_dir
         self.ltob = Latest_observation()
 
-
-        rospy.sleep(0.5)
-
         self.bridge = CvBridge()
 
-        self.ngroup = 500
+        self.ngroup = 3
         self.igrp = 0
 
         # if it is an auxiliary node advertise services
         if self.instance_type != 'main':
             rospy.init_node('aux_recorder1')
             rospy.loginfo("init node aux_recorder1")
+
+            # initializing the server:
             rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
             rospy.spin()
         else:
+            # initializing the client:
             self.get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
             self.init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
+
             def spin_thread():
                 rospy.spin()
-
             thread.start_new(spin_thread, ())
             print "Recorder intialized."
             print "started spin thread"
@@ -231,14 +231,13 @@ class RobotRecorder(object):
 
 
     def save(self, i_tr):
-
         t_savereq = rospy.get_time()
         assert self.instance_type == 'main'
 
         # request save at auxiliary recorders
         try:
             rospy.wait_for_service('get_kinectdata', 0.05)
-            resp1 = self.get_kinectdata_func()
+            resp1 = self.get_kinectdata_func(i_tr)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
@@ -249,18 +248,17 @@ class RobotRecorder(object):
             return
 
         # timing statistics:
-        if self.instance_type == 'main':
-            delta_req_store_dimage = self.ltob.tstamp_d_img - t_savereq
-            rospy.loginfo("time between last stored depthimage and save request: {}"
-                          .format(delta_req_store_dimage))
+        delta_req_store_dimage = self.ltob.tstamp_d_img - t_savereq
+        rospy.loginfo("time between last stored depthimage and save request: {}"
+                      .format(delta_req_store_dimage))
 
-            delta_req_store_image = self.ltob.tstamp_img - t_savereq
-            rospy.loginfo("time between last stored image and save request: {}"
-                          .format(delta_req_store_image))
+        delta_req_store_image = self.ltob.tstamp_img - t_savereq
+        rospy.loginfo("time between last stored image and save request: {}"
+                      .format(delta_req_store_image))
 
-            complete_time_save = rospy.get_time() - t_savereq
-            rospy.loginfo("complete time for saving: {}"
-                          .format(complete_time_save))
+        complete_time_save = rospy.get_time() - t_savereq
+        rospy.loginfo("complete time for saving: {}"
+                      .format(complete_time_save))
 
 
     def _save_local(self,i_tr):
