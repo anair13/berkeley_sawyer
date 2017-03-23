@@ -99,11 +99,9 @@ class RobotRecorder(object):
 
     def get_kinect_handler(self, req):
         self._save_img_local(req.itr)
-        rospy.loginfo('started get_kinect data service handler')
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
     def init_traj_handler(self, req):
-        rospy.loginfo('started init_traj data service handler')
         self._init_traj_local(req.itr)
         return init_trajResponse()
 
