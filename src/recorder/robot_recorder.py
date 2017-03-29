@@ -127,7 +127,7 @@ class RobotRecorder(object):
         # ## fixing this at 1400
         img = np.clip(img,0, 1400)
 
-        startcol = 14
+        startcol = 7
         startrow = 0
         endcol = startcol + 64
         endrow = startrow + 64
@@ -141,9 +141,7 @@ class RobotRecorder(object):
         self.ltob.d_img_cropped_8bit = Image.fromarray(img)
 
         # Image.fromarray(img).show()
-        # if self.start_loop:
-        #     self.save()
-
+        # pdb.set_trace()
 
     def store_latest_im(self, data):
         # rospy.loginfo('storing color image')
@@ -154,19 +152,13 @@ class RobotRecorder(object):
         self.ltob.img_cv2 =  cv_image
         self.ltob.img_cropped = self.crop_colorimg(cv_image)
 
-        # cv_image.imshow()
-        # pdb.set_trace()
-        # small = cv2.resize(cv_image, (0, 0), fx=0.5, fy=0.5)
-        # small.imshow()
-        # pdb.set_trace()
-
 
     def crop_colorimg(self, cv_image):
         cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(cv_image)
         img.thumbnail(np.asarray(img.size) / 14, Image.ANTIALIAS)
 
-        startcol = 34
+        startcol = 20
         startrow = 3
         endcol = startcol + 64
         endrow = startrow + 64
