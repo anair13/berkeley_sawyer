@@ -1,0 +1,16 @@
+to start the datacollection on several computers use the following command:
+
+open terminal on kullback:
+go to berkeley_sawyer/launch/bridgeonly
+run ./startkinect_kullback.sh
+
+if you want to do random movements:
+run rosrun berkeley_sawyer primitives.py
+
+if you just want to save images
+run rosrun berkeley_sawyer test_recorder.py
+
+open terminal on kinectbox1:
+go to launch/bridgeonly
+run ./startkinect_kinect1.sh
+run rosrun berkeley_saweyer robot_recorder.py

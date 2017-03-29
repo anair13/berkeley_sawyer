@@ -277,21 +277,18 @@ class RobotRecorder(object):
             return
 
         # timing statistics:
-        tstat = False
-        if tstat:
-            delta_req_store_dimage = self.ltob.tstamp_d_img - t_savereq
-            rospy.loginfo("time between last stored depthimage and save request: {}"
-                          .format(delta_req_store_dimage))
-
-            delta_req_store_image = self.ltob.tstamp_img - t_savereq
-            rospy.loginfo("time between last stored image and save request: {}"
-                          .format(delta_req_store_image))
-
-            complete_time_save = rospy.get_time() - t_savereq
-            rospy.loginfo("complete time for saving: {}"
+        delta_req_store_dimage = self.ltob.tstamp_d_img - t_savereq
+        rospy.loginfo("time between last stored depthimage and save request: {}"
+                      .format(delta_req_store_dimage))
+        delta_req_store_image = self.ltob.tstamp_img - t_savereq
+        rospy.loginfo("time between last stored image and save request: {}"
+                      .format(delta_req_store_image))
+        complete_time_save = rospy.get_time() - t_savereq
+        rospy.loginfo("complete time for saving: {}"
                           .format(complete_time_save))
-
-
+        d_times = [delta_req_store_dimage, delta_req_store_image, complete_time_save]
+        # if not (d_times < 0.4).all():
+        #     raise ValueError("images could not be captured in time!")
 
     def _save_img_local(self, i_tr):
 

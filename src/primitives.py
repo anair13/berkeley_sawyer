@@ -108,8 +108,8 @@ class Primitive_Executor(object):
 
         lower_height = 0.22
 
-        self.xlim = [0.44, 0.74]  # min, max in cartesian X-direction
-        self.ylim = [-0.27, 0.2]  # min, max in cartesian Y-direction
+        self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
+        self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
         des_pos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]),
                         np.random.uniform(self.ylim[0], self.ylim[1])])
 
