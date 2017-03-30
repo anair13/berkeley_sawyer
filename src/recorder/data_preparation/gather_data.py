@@ -15,7 +15,7 @@ class Trajectory(object):
         self.dimages = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.uint8)
         self.dvalues = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.float32)
 
-def gather(sourcedirs, targetdir):
+def gather(sourcedirs):
 
 
     # go to first source and get group names:
@@ -89,8 +89,7 @@ def gather(sourcedirs, targetdir):
 
 if __name__ == "__main__":
 
-    sourcedirs =['/home/frederik/Documents/sawyer_data/test_recording/main',
-                 '/home/frederik/Documents/sawyer_data/test_recording/aux1']
+    sourcedirs =['/home/guser/sawyer_data/test_recording',
+                 '/home/guser/sawyer_data/sawyer_data/aux1']
 
-    targetdir = '/home/frederik/Documents/sawyer_data/gathered_data/'
-    gather(sourcedirs, targetdir)
+    gather(sourcedirs)
