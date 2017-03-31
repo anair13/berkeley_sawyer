@@ -106,7 +106,11 @@ class RobotRecorder(object):
         return init_trajResponse()
 
     def store_latest_d_im(self, data):
-        # rospy.loginfo('storing depth image')
+        if self.ltob.tstamp_img != None:
+            rospy.loginfo("time difference to last stored dimg: {}".format(
+                rospy.get_time() - self.ltob.tstamp_d_img
+            ))
+
         self.ltob.tstamp_d_img = rospy.get_time()
 
         self.ltob.d_img_msg = data
@@ -143,14 +147,27 @@ class RobotRecorder(object):
         # Image.fromarray(img).show()
         # pdb.set_trace()
 
+        rospy.loginfo("time to save depth-image: {}".format(
+            rospy.get_time() - self.ltob.tstamp_d_img
+        ))
+
     def store_latest_im(self, data):
         # rospy.loginfo('storing color image')
+        if self.ltob.tstamp_img != None:
+            rospy.loginfo("time difference to last stored img: {}".format(
+                rospy.get_time() - self.ltob.tstamp_img
+            ))
+
         self.ltob.img_msg = data
         self.ltob.tstamp_img = rospy.get_time()
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")  #(1920, 1080)
 
         self.ltob.img_cv2 =  cv_image
         self.ltob.img_cropped = self.crop_colorimg(cv_image)
+
+        rospy.loginfo("time to save image: {}".format(
+            rospy.get_time() - self.ltob.tstamp_img
+        ))
 
 
     def crop_colorimg(self, cv_image):

@@ -22,7 +22,8 @@ class Primitive_Executor(object):
 
         self.num_traj = 500
 
-        self.state_sequence_length = self.num_actions + 1
+        self.state_sequence_length = 30 # number of snapshots that are taken
+        self.num_act = self.state_sequence_length / 2 - 1  # number of different positions on trajectory
 
         self.ctrl = robot_controller.RobotController()
         self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording",
@@ -32,9 +33,6 @@ class Primitive_Executor(object):
         # drive to neutral position:
         self.ctrl.set_neutral()
         import pdb; pdb.set_trace()
-
-
-
 
         limb = 'right'
         self.name_of_service = "ExternalTools/" + limb + "/PositionKinematicsNode/FKService"
@@ -104,47 +102,58 @@ class Primitive_Executor(object):
         self.des_pos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]),
                         np.random.uniform(self.ylim[0], self.ylim[1])])
 
-        self.ctrl.limb.set_joint_position_speed(.2)
 
         self.close_nstep, self.tclose, self.up_nstep, self.t_up = 0, 0, 0, 0
         self.next_wypt = np.array([self.des_pos[0], self.des_pos[1], self.lower_height])
 
-
-        num_save = 30  # number of snapshots on trajecotry
-        num_act = num_save/2 -1  # number of different positions on trajectory
-        duration = 15  # duration of trajectory in seconds
+        duration = 10  # duration of trajectory in seconds
 
         start_time = rospy.get_time()  # in seconds
         finish_time = start_time + duration  # in seconds
         print 'start time', start_time
         print 'finish_time', finish_time
 
-        tsave = np.linspace(0, duration, num_save)
+        tsave = np.linspace(0, duration, self.state_sequence_length)
         print 'save times', tsave
-        tpos = np.linspace(0, duration,
-                           num_act + 1)  # +1 because the first time is when the endeffecotr is at the initial position
-        print 'cmd new pos times ', tpos
+        tact = np.linspace(0, duration,
+                           self.num_act + 1)  # +1 because the first time is when the endeffecotr is at the initial position
+        print 'cmd new pos times ', tact
 
         i_act = 0  # index of current commanded point
         i_save = 0  # index of current saved step
 
-        self.ctrl.limb.set_joint_position_speed(1)
+        self.ctrl.limb.set_joint_position_speed(.3)
 
         while rospy.get_time() < finish_time:
             self.curr_delta_time = rospy.get_time() - start_time
 
-            if self.curr_delta_time > tpos[i_act]:
-                action_vec = self.act(i_act)  # after completing trajectory save final state
+            if self.curr_delta_time > tact[i_act]:
+                action_vec, des_joint_angles, des_cartpos = self.act(i_act)  # after completing trajectory save final state
+                i_act += 1
 
-            if rospy.get_time() > tsave[i_save]:
+            try:
+                self.ctrl.limb.set_joint_positions(des_joint_angles)
+            except OSError:
+                rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
+                rospy.sleep(.5)
+                raise Traj_aborted_except('raising Traj_aborted_except')
+            if self.ctrl.limb.has_collided():
+                rospy.logerr('collision detected!!!')
+                rospy.sleep(.5)
+                raise Traj_aborted_except('raising Traj_aborted_except')
+
+            # print 'current position error', des_cartpos - self.get_endeffector_pos(pos_only=True)
+            if self.curr_delta_time > tsave[i_save]:
                 print 'saving index{}'.format(i_save)
-                i_save += 1
                 self.recorder.save(i_save, action_vec)
+                i_save += 1
 
         action_vec = np.zeros_like(action_vec)
+        #saving the final state:
         self.recorder.save(i_save, action_vec)
 
     def act(self, i_act):
+
         # sample action type:
         noptions = 3
         action = np.random.choice(range(noptions), p=[0.80, 0.1, 0.1])
@@ -200,7 +209,7 @@ class Primitive_Executor(object):
                                                            inverse_kinematics.EXAMPLE_O)
         start_joints = self.ctrl.limb.joint_angles()
         try:
-            cmd = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
+            des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
                                                       use_advanced_options=True)
         except ValueError:
             rospy.logerr('no inverse kinematics solution found, '
@@ -208,18 +217,8 @@ class Primitive_Executor(object):
             current_joints = self.ctrl.limb.joint_angles()
             self.ctrl.limb.set_joint_positions(current_joints)
             raise Traj_aborted_except('raising Traj_aborted_except')
-        try:
-            self.ctrl.limb.set_joint_positions(cmd, timeout=2.)
-        except OSError:
-            rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
-            rospy.sleep(.5)
-            raise Traj_aborted_except('raising Traj_aborted_except')
-        if self.ctrl.limb.has_collided():
-            rospy.logerr('collision detected!!!')
-            rospy.sleep(.5)
-            raise Traj_aborted_except('raising Traj_aborted_except')
 
-        return action_vec
+        return action_vec, des_joint_angles, self.next_wypt
 
     def truncate_pos(self, pos):
 
