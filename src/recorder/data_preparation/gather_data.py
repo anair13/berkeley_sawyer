@@ -28,6 +28,7 @@ def gather(sourcedirs):
     traj_list = []
     ntraj_max = 7
     itraj = 0
+    print 'here'
     for gr in groupnames:
         gr_dir_main = sourcedirs[0] + '/' + gr
 
@@ -89,7 +90,7 @@ def gather(sourcedirs):
 
 if __name__ == "__main__":
 
-    sourcedirs =['/home/guser/sawyer_data/test_recording',
-                 '/home/guser/sawyer_data/sawyer_data/aux1']
+    sourcedirs =['/home/guser/sawyer_data/main',
+                 '/home/guser/sawyer_data/aux1']
 
     gather(sourcedirs)

@@ -39,6 +39,7 @@ class Primitive_Executor(object):
         self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
 
         self.close_nstep, self.tclose, self.up_nstep, self.t_up = None, None, None, None
+        self.robot_move = True
         self.run_data_collection()
 
     def run_data_collection(self):
@@ -90,7 +91,7 @@ class Primitive_Executor(object):
 
     def run_trajectory(self, i_tr):
 
-        self.ctrl.set_neutral(speed= 0.2)
+        self.ctrl.set_neutral(speed= 0.3)
         self.ctrl.gripper.open()
         self.gripper_closed = False
         self.gripper_up = True
@@ -122,7 +123,7 @@ class Primitive_Executor(object):
         i_act = 0  # index of current commanded point
         i_save = 0  # index of current saved step
 
-        self.ctrl.limb.set_joint_position_speed(.3)
+        self.ctrl.limb.set_joint_position_speed(.15)
 
         while rospy.get_time() < finish_time:
             self.curr_delta_time = rospy.get_time() - start_time
@@ -132,7 +133,8 @@ class Primitive_Executor(object):
                 i_act += 1
 
             try:
-                self.ctrl.limb.set_joint_positions(des_joint_angles)
+                if self.robot_move:
+                    self.ctrl.limb.set_joint_positions(des_joint_angles)
             except OSError:
                 rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
                 rospy.sleep(.5)

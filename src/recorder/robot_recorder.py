@@ -98,6 +98,7 @@ class RobotRecorder(object):
 
 
     def get_kinect_handler(self, req):
+        self.t_savereq = rospy.get_time()
         self._save_img_local(req.itr)
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
@@ -142,7 +143,7 @@ class RobotRecorder(object):
         img = img.astype(np.float32)/ np.max(img) *256
         img = img.astype(np.uint8)
         img = np.squeeze(img)
-        self.ltob.d_img_cropped_8bit = Image.fromarray(img)
+        self.ltob.d_img_cropped_8bit = img
 
         # Image.fromarray(img).show()
         # pdb.set_trace()
@@ -171,18 +172,18 @@ class RobotRecorder(object):
 
 
     def crop_colorimg(self, cv_image):
-        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
-        img = Image.fromarray(cv_image)
-        img.thumbnail(np.asarray(img.size) / 14, Image.ANTIALIAS)
+        self.ltob.d_img_raw_npy = np.asarray(cv_image)
+        img = cv2.resize(cv_image, (0, 0), fx=1 / 15., fy=1 / 15.)
 
-        startcol = 20
-        startrow = 3
+        startcol = 27
+        startrow = 2
         endcol = startcol + 64
         endrow = startrow + 64
-        img = img.crop((startcol, startrow, endcol, endrow))
+        # crop image:
+        img = img[startrow:endrow, startcol:endcol]
 
+        # cv2.imshow('img', img)
         # print 'cropped'
-        # img.show()
         # pdb.set_trace()
         return img
 
@@ -268,7 +269,7 @@ class RobotRecorder(object):
         print 'deleted {}'.format(traj_folder)
 
     def save(self, i_tr, action):
-        t_savereq = rospy.get_time()
+        self.t_savereq = rospy.get_time()
         assert self.instance_type == 'main'
 
         # request save at auxiliary recorders
@@ -286,16 +287,8 @@ class RobotRecorder(object):
             return
 
         # timing statistics:
-        delta_req_store_dimage = self.ltob.tstamp_d_img - t_savereq
-        rospy.loginfo("time between last stored depthimage and save request: {}"
-                      .format(delta_req_store_dimage))
-        delta_req_store_image = self.ltob.tstamp_img - t_savereq
-        rospy.loginfo("time between last stored image and save request: {}"
-                      .format(delta_req_store_image))
-        complete_time_save = rospy.get_time() - t_savereq
-        rospy.loginfo("complete time for saving: {}"
-                          .format(complete_time_save))
-        d_times = [delta_req_store_dimage, delta_req_store_image, complete_time_save]
+
+        # d_times = [delta_req_store_dimage, delta_req_store_image, complete_time_save]
         # if not (d_times < 0.4).all():
         #     raise ValueError("images could not be captured in time!")
 
@@ -306,14 +299,14 @@ class RobotRecorder(object):
         # saving the full resolution image
         if self.ltob.img_cv2 is not None:
             image_name =  self.image_folder+ "/" + pref + "_full_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
-            cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
         else:
             raise ValueError('img_cv2 no data received')
 
         # saving the cropped and downsized image
         if self.ltob.img_cropped is not None:
             image_name = self.image_folder + "/" + pref +"_cropped_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_img)
-            self.ltob.img_cropped.save(image_name, "PNG")
+            cv2.imwrite(image_name, self.ltob.img_cropped, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT,1])
         else:
             raise ValueError('img_cropped no data received')
 
@@ -328,9 +321,20 @@ class RobotRecorder(object):
         # saving downsampled 8bit images
         if self.ltob.d_img_cropped_8bit is not None:
             image_name = self.depth_image_folder + "/" + pref + "_cropped_depth_im{0}_time{1}.png".format(i_tr, self.ltob.tstamp_d_img)
-            self.ltob.d_img_cropped_8bit.save(image_name, "PNG")
+            cv2.imwrite(image_name, self.ltob.d_img_cropped_8bit, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT, 1])
         else:
             raise ValueError('d_img_cropped_8bit no data received')
+
+        rospy.loginfo("time of request {}".format(self.t_savereq))
+        delta_req_store_dimage = self.ltob.tstamp_d_img - self.t_savereq
+        rospy.loginfo("time between last stored depthimage and save request: {}"
+                      .format(delta_req_store_dimage))
+        delta_req_store_image = self.ltob.tstamp_img - self.t_savereq
+        rospy.loginfo("time between last stored image and save request: {}"
+                      .format(delta_req_store_image))
+        complete_time_save = rospy.get_time() - self.t_savereq
+        rospy.loginfo("complete time for saving: {}"
+                      .format(complete_time_save))
 
 
 if __name__ ==  '__main__':
