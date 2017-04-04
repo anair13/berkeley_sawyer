@@ -111,7 +111,7 @@ class RobotRecorder(object):
 
     def delete_traj_handler(self, req):
         self._delete_traj_local(req.itr)
-        return delete_traj_Response()
+        return delete_trajResponse()
 
     def store_latest_d_im(self, data):
         # if self.ltob.tstamp_img != None:
