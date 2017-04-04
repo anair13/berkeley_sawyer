@@ -89,6 +89,7 @@ class RobotRecorder(object):
             # initializing the client:
             self.get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
             self.init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
+            self.delete_traj_func = rospy.ServiceProxy('init_traj', delete_traj)
 
             def spin_thread():
                 rospy.spin()
@@ -104,6 +105,7 @@ class RobotRecorder(object):
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
     def init_traj_handler(self, req):
+        self.igrp = req.igrp
         self._init_traj_local(req.itr)
         return init_trajResponse()
 
@@ -200,9 +202,14 @@ class RobotRecorder(object):
     def init_traj(self, itr):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
+
+        if ((itr+1) % self.ngroup) == 0:
+            self.igrp += 1
+
+
         try:
             rospy.wait_for_service('init_traj', timeout=0.05)
-            resp1 = self.init_traj_func(itr)
+            resp1 = self.init_traj_func(itr, self.igrp)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
@@ -216,11 +223,11 @@ class RobotRecorder(object):
         :return:
         """
 
+
         self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
 
-        #rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
-        if ((itr+1) % self.ngroup) == 0:
-            self.igrp += 1
+        rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
+
 
         traj_folder = self.group_folder + '/traj{}'.format(itr)
         self.image_folder = traj_folder + '/images'
@@ -271,7 +278,7 @@ class RobotRecorder(object):
         assert self.instance_type == 'main'
         try:
             rospy.wait_for_service('get_kinectdata', 0.01)
-            resp1 = self.get_kinectdata_func(tr)
+            resp1 = self.delete_traj_func(tr)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('delete traj service failed')
@@ -318,6 +325,8 @@ class RobotRecorder(object):
         #     raise ValueError("images could not be captured in time!")
 
     def _save_img_local(self, i_tr):
+
+        rospy.loginfo("saving under {}".format(self.image_folder))
 
         pref = self.instance_type
         #saving image
