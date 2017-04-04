@@ -89,7 +89,7 @@ class RobotRecorder(object):
             # initializing the client:
             self.get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
             self.init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
-            self.delete_traj_func = rospy.ServiceProxy('init_traj', delete_traj)
+            self.delete_traj_func = rospy.ServiceProxy('delete_traj', delete_traj)
 
             def spin_thread():
                 rospy.spin()
