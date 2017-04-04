@@ -28,7 +28,7 @@ def gather(sourcedirs):
     traj_list = []
     ntraj_max = 7
     itraj = 0
-    print 'here'
+
     for gr in groupnames:
         gr_dir_main = sourcedirs[0] + '/' + gr
 

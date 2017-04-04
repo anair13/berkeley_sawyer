@@ -83,6 +83,7 @@ class RobotRecorder(object):
             # initializing the server:
             rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
+            rospy.Service('delete_traj', delete_traj, self.delete_traj_handler)
             rospy.spin()
         else:
             # initializing the client:
@@ -99,18 +100,22 @@ class RobotRecorder(object):
 
     def get_kinect_handler(self, req):
         self.t_savereq = rospy.get_time()
-        self._save_img_local(req.itr)
+        # self._save_img_local(req.itr)  !!!!!!!!!!!!!!!!!!!!!!! just for testing
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
     def init_traj_handler(self, req):
         self._init_traj_local(req.itr)
         return init_trajResponse()
 
+    def delete_traj_handler(self, req):
+        self._delete_traj_local(req.itr)
+        return delete_traj_Response()
+
     def store_latest_d_im(self, data):
-        if self.ltob.tstamp_img != None:
-            rospy.loginfo("time difference to last stored dimg: {}".format(
-                rospy.get_time() - self.ltob.tstamp_d_img
-            ))
+        # if self.ltob.tstamp_img != None:
+            # rospy.loginfo("time difference to last stored dimg: {}".format(
+            #     rospy.get_time() - self.ltob.tstamp_d_img
+            # ))
 
         self.ltob.tstamp_d_img = rospy.get_time()
 
@@ -118,7 +123,7 @@ class RobotRecorder(object):
         cv_image = self.bridge.imgmsg_to_cv2(data, '16UC1')
 
         self.ltob.d_img_raw_npy = np.asarray(cv_image)
-        img = cv2.resize(cv_image, (0, 0), fx=1 /5.5, fy=1 / 5.5)
+        img = cv2.resize(cv_image, (0, 0), fx=1 /5.5, fy=1 / 5.5, interpolation=cv2.INTER_AREA)
 
         # print '----------------------'
         # print 'image raw data:'
@@ -148,16 +153,16 @@ class RobotRecorder(object):
         # Image.fromarray(img).show()
         # pdb.set_trace()
 
-        rospy.loginfo("time to save depth-image: {}".format(
-            rospy.get_time() - self.ltob.tstamp_d_img
-        ))
+        # rospy.loginfo("time to save depth-image: {}".format(
+        #     rospy.get_time() - self.ltob.tstamp_d_img
+        # ))
 
     def store_latest_im(self, data):
         # rospy.loginfo('storing color image')
-        if self.ltob.tstamp_img != None:
-            rospy.loginfo("time difference to last stored img: {}".format(
-                rospy.get_time() - self.ltob.tstamp_img
-            ))
+        # if self.ltob.tstamp_img != None:
+        #     rospy.loginfo("time difference to last stored img: {}".format(
+        #         rospy.get_time() - self.ltob.tstamp_img
+        #     ))
 
         self.ltob.img_msg = data
         self.ltob.tstamp_img = rospy.get_time()
@@ -166,14 +171,14 @@ class RobotRecorder(object):
         self.ltob.img_cv2 =  cv_image
         self.ltob.img_cropped = self.crop_colorimg(cv_image)
 
-        rospy.loginfo("time to save image: {}".format(
-            rospy.get_time() - self.ltob.tstamp_img
-        ))
+        # rospy.loginfo("time to save image: {}".format(
+        #     rospy.get_time() - self.ltob.tstamp_img
+        # ))
 
 
     def crop_colorimg(self, cv_image):
         self.ltob.d_img_raw_npy = np.asarray(cv_image)
-        img = cv2.resize(cv_image, (0, 0), fx=1 / 15., fy=1 / 15.)
+        img = cv2.resize(cv_image, (0, 0), fx=1 / 15., fy=1 / 15., interpolation=cv2.INTER_AREA)
 
         startcol = 27
         startrow = 2
@@ -213,7 +218,7 @@ class RobotRecorder(object):
 
         self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
 
-        rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
+        #rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))
         if ((itr+1) % self.ngroup) == 0:
             self.igrp += 1
 
@@ -263,7 +268,8 @@ class RobotRecorder(object):
                 cPickle.dump(dict, f)
 
 
-    def delete(self, i_tr):
+    def _delete_traj_local(self, i_tr):
+        self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
         traj_folder = self.group_folder + '/traj{}'.format(i_tr)
         shutil.rmtree(traj_folder)
         print 'deleted {}'.format(traj_folder)
@@ -274,17 +280,27 @@ class RobotRecorder(object):
 
         # request save at auxiliary recorders
         try:
-            rospy.wait_for_service('get_kinectdata', 0.05)
+            # t1 = rospy.get_time()
+            rospy.wait_for_service('get_kinectdata', 0.01)
+            #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
+            # t2 = rospy.get_time()
             resp1 = self.get_kinectdata_func(i_tr)
+            #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
 
+        #rospy.loginfo("time to complete service {}".format(rospy.get_time()- self.t_savereq))
+
+
+        t_beforesave = rospy.get_time()
         try:
             self._save_img_local(i_tr)
             self._save_state_actions(i_tr, action)
         except ValueError:
             return
+
+        #rospy.loginfo("complete time to save locally {}".format(rospy.get_time() - t_beforesave))
 
         # timing statistics:
 
@@ -325,16 +341,16 @@ class RobotRecorder(object):
         else:
             raise ValueError('d_img_cropped_8bit no data received')
 
-        rospy.loginfo("time of request {}".format(self.t_savereq))
-        delta_req_store_dimage = self.ltob.tstamp_d_img - self.t_savereq
-        rospy.loginfo("time between last stored depthimage and save request: {}"
-                      .format(delta_req_store_dimage))
-        delta_req_store_image = self.ltob.tstamp_img - self.t_savereq
-        rospy.loginfo("time between last stored image and save request: {}"
-                      .format(delta_req_store_image))
-        complete_time_save = rospy.get_time() - self.t_savereq
-        rospy.loginfo("complete time for saving: {}"
-                      .format(complete_time_save))
+        # rospy.loginfo("time of request {}".format(self.t_savereq))
+        # delta_req_store_dimage = self.t_savereq - self.ltob.tstamp_d_img
+        # rospy.loginfo("time between last stored depthimage and save request: {}"
+        #               .format(delta_req_store_dimage))
+        # delta_req_store_image = self.t_savereq - self.ltob.tstamp_img
+        # rospy.loginfo("time between last stored image and save request: {}"
+        #               .format(delta_req_store_image))
+        # complete_time_save = rospy.get_time() - self.t_savereq
+        # rospy.loginfo("complete time for saving: {}"
+        #               .format(complete_time_save))
 
 
 if __name__ ==  '__main__':

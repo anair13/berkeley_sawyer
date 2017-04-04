@@ -12,6 +12,7 @@ from sensor_msgs.msg import JointState
 import inverse_kinematics
 import robot_controller
 from recorder import robot_recorder
+import os
 
 
 class Traj_aborted_except(Exception):
@@ -20,13 +21,13 @@ class Traj_aborted_except(Exception):
 class Primitive_Executor(object):
     def __init__(self):
 
-        self.num_traj = 500
+        self.num_traj = 50000
 
         self.state_sequence_length = 30 # number of snapshots that are taken
         self.num_act = self.state_sequence_length / 2 - 1  # number of different positions on trajectory
 
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording",
+        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/testrecording",
                                                      start_loop=False,
                                                      seq_len = self.state_sequence_length)
 
@@ -40,11 +41,20 @@ class Primitive_Executor(object):
 
         self.close_nstep, self.tclose, self.up_nstep, self.t_up = None, None, None, None
         self.robot_move = True
+        self.checkpoint_file = os.path.join(self.recorder.save_dir, 'checkpoint.txt')
+
         self.run_data_collection()
 
     def run_data_collection(self):
 
-        for tr in range(self.num_traj):
+        # check if there is a checkpoint from which to resume
+        if os.path.isfile(self.checkpoint_file):
+            start_tr, start_grp = self.parse_ckpt()
+            print 'resuming data collection at trajectory {} in group {}'.format(start_tr, start_grp)
+            self.recorder.igrp = start_grp
+            pdb.set_trace()
+
+        for tr in range(start_tr, self.num_traj):
 
             tstart = datetime.now()
             # self.run_trajectory_const_speed(tr)
@@ -54,13 +64,30 @@ class Primitive_Executor(object):
                     self.run_trajectory(tr)
                     done = True
                 except Traj_aborted_except:
-                    self.recorder.delete(tr)
+                    self.recorder._delete_traj_local(tr)
 
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
 
+            self.write_ckpt(tr, self.recorder.igrp)
+
 
         self.ctrl.set_neutral()
+
+    def write_ckpt(self, tr, i_grp):
+        with open(self.checkpoint_file, 'w') as f:
+            f.write("last trajectory, current group%f \n")
+            f.write("{} {} \n".format(tr, i_grp))
+
+    def parse_ckpt(self):
+        with open(self.checkpoint_file, 'r') as f:
+            i = 0
+            for line in f:
+                if i ==1:
+                    numbers_str = line.split()
+                    itr, igrp = [int(x) for x in numbers_str]  # map(float,numbers_str) works t
+                i += 1
+            return itr, igrp
 
     def get_endeffector_pos(self, pos_only=True):
         """
@@ -123,7 +150,7 @@ class Primitive_Executor(object):
         i_act = 0  # index of current commanded point
         i_save = 0  # index of current saved step
 
-        self.ctrl.limb.set_joint_position_speed(.15)
+        self.ctrl.limb.set_joint_position_speed(.20)
 
         while rospy.get_time() < finish_time:
             self.curr_delta_time = rospy.get_time() - start_time
@@ -158,7 +185,7 @@ class Primitive_Executor(object):
 
         # sample action type:
         noptions = 3
-        action = np.random.choice(range(noptions), p=[0.80, 0.1, 0.1])
+        action = np.random.choice(range(noptions), p=[0.70, 0.2, 0.1])
         print 'action: ', i_act
         if action == 0:
             maxshift = .1
@@ -171,7 +198,7 @@ class Primitive_Executor(object):
         else:
             posshift = np.zeros(2)
         if action == 1:  # close gripper and hold for n steps
-            self.close_nstep = np.random.randint(1, 6)
+            self.close_nstep = np.random.randint(3, 5)
             print 'close and hold for ', self.close_nstep
             self.tclose = i_act
             self.ctrl.gripper.close()
@@ -179,7 +206,7 @@ class Primitive_Executor(object):
         else:
             close_nstep = 0
         if action == 2:  # go up for n steps
-            self.up_nstep = np.random.randint(1, 6)
+            self.up_nstep = np.random.randint(3, 5)
             self.t_up = i_act
             delta_up = .1
             self.next_wypt[2] = self.lower_height + delta_up
@@ -191,12 +218,15 @@ class Primitive_Executor(object):
             if i_act > (self.tclose + self.close_nstep):
                 self.ctrl.gripper.open()
                 print 'opening gripper'
-            self.gripper_closed = False
+                self.gripper_closed = False
         if self.gripper_up:
             if i_act > (self.t_up + self.up_nstep):
                 self.next_wypt[2] = self.lower_height
                 print 'going down'
                 self.gripper_up = False
+
+        print 'gripper closed: ', self.gripper_closed
+
         action_vec = np.array([1 if action == 0 else 0,  # move
                                posshift[0],
                                posshift[1],
