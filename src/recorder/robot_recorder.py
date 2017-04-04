@@ -101,7 +101,7 @@ class RobotRecorder(object):
 
     def get_kinect_handler(self, req):
         self.t_savereq = rospy.get_time()
-        # self._save_img_local(req.itr)  !!!!!!!!!!!!!!!!!!!!!!! just for testing
+        self._save_img_local(req.itr)
         return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
 
     def init_traj_handler(self, req):
@@ -325,8 +325,6 @@ class RobotRecorder(object):
         #     raise ValueError("images could not be captured in time!")
 
     def _save_img_local(self, i_tr):
-
-        rospy.loginfo("saving under {}".format(self.image_folder))
 
         pref = self.instance_type
         #saving image

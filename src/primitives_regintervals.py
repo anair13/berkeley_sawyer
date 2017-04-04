@@ -54,6 +54,8 @@ class Primitive_Executor(object):
             self.recorder.igrp = start_grp
             self.recorder.delete_traj(start_tr)
             pdb.set_trace()
+        else:
+            start_tr = 0
 
         for tr in range(start_tr, self.num_traj):
 
