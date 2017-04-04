@@ -52,6 +52,7 @@ class Primitive_Executor(object):
             start_tr, start_grp = self.parse_ckpt()
             print 'resuming data collection at trajectory {} in group {}'.format(start_tr, start_grp)
             self.recorder.igrp = start_grp
+            self.recorder.delete_traj(start_tr)
             pdb.set_trace()
 
         for tr in range(start_tr, self.num_traj):
@@ -64,7 +65,7 @@ class Primitive_Executor(object):
                     self.run_trajectory(tr)
                     done = True
                 except Traj_aborted_except:
-                    self.recorder._delete_traj_local(tr)
+                    self.recorder.delete_traj(tr)
 
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
@@ -88,6 +89,7 @@ class Primitive_Executor(object):
                     itr, igrp = [int(x) for x in numbers_str]  # map(float,numbers_str) works t
                 i += 1
             return itr, igrp
+
 
     def get_endeffector_pos(self, pos_only=True):
         """

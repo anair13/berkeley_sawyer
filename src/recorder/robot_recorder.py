@@ -267,6 +267,15 @@ class RobotRecorder(object):
                        'actions': actions}
                 cPickle.dump(dict, f)
 
+    def delete_traj(self, tr):
+        assert self.instance_type == 'main'
+        try:
+            rospy.wait_for_service('get_kinectdata', 0.01)
+            resp1 = self.get_kinectdata_func(tr)
+        except (rospy.ServiceException, rospy.ROSException), e:
+            rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('delete traj service failed')
+        self._delete_traj_local(tr)
 
     def _delete_traj_local(self, i_tr):
         self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
