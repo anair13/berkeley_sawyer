@@ -277,7 +277,7 @@ class RobotRecorder(object):
     def delete_traj(self, tr):
         assert self.instance_type == 'main'
         try:
-            rospy.wait_for_service('get_kinectdata', 0.01)
+            rospy.wait_for_service('delete_traj', 0.01)
             resp1 = self.delete_traj_func(tr)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
