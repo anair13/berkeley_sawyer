@@ -13,6 +13,7 @@ def _int64_feature(value):
   return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
 import pdb
+import re
 
 import create_gif
 
@@ -24,14 +25,19 @@ class Trajectory(object):
         self.images = np.zeros((self.T, self.n_cam, 64, 64, 3), dtype = np.uint8)  # n_cam=0: main, n_cam=1: aux1
         self.dimages = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.uint8)
         self.dvalues = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.float32)
-        self.actions = np.zeros((self.T), 7)
-        self.joint_angles = np.zeros((self.T), 7)
+        self.actions = np.zeros((self.T, 7))
+        self.joint_angles = np.zeros((self.T, 7))
 
 class TF_rec_converter:
     def __init__(self):
         pass
 
     def gather(self, sourcedirs, gif_dir= None, tfrec_dir = None):
+
+        self.tfrec_dir = tf_rec_dir
+        for dirs in sourcedirs:
+            if not os.path.exists(dirs):
+                raise ValueError('path {} does not exist!'.format(dirs))
 
         # go to first source and get group names:
         groupnames = glob.glob(os.path.join(sourcedirs[0], '*'))
@@ -49,7 +55,10 @@ class TF_rec_converter:
             trajnames = glob.glob(os.path.join(gr_dir_main, '*'))
             trajnames = [str.split(n, '/')[-1] for n in trajnames]
 
+
             for trajname in trajnames:  # loop of traj0, traj1,..
+
+                traj_index = re.match('.*?([0-9]+)$', trajname).group(1)
 
                 traj = Trajectory(self.src_names)
                 traj_dir_main = gr_dir_main + '/' + trajname
@@ -57,7 +66,8 @@ class TF_rec_converter:
                 traj_subpath = '/'.join(str.split(traj_dir_main, '/')[-2:])
 
                 #load actions:
-                actions = cPickle.load(open(traj_dir_main + '', "rb"))
+                actions = cPickle.load(open(traj_dir_main +
+                                            '/joint_angles_traj{}.pkl'.format(traj_index), "rb"))
                 traj.actions = actions['actions']
                 traj.joint_angles = actions['jointangles']
 
@@ -102,11 +112,11 @@ class TF_rec_converter:
                 itraj += 1
 
                 if tf_rec_dir != None:
-                    if len(traj_list) == 256:
+                    if len(traj_list) == 10:
 
                         filename = 'traj_{0}_to_{1}' \
                             .format(traj_start_ind, itraj)
-                        self.save_tf_record(tfrec_dir, filename, traj_list)
+                        self.save_tf_record(filename, traj_list)
                         traj_start_ind = itraj
                         traj_list = []
 
@@ -116,12 +126,15 @@ class TF_rec_converter:
                         print 'created gif, exiting'
                         return
 
-    def save_tf_record(self, dir, filename, trajectory_list):
+    def save_tf_record(self, filename, trajectory_list):
         """
         saves data_files from one sample trajectory into one tf-record file
         """
+        train_dir = os.path.join(tf_rec_dir, 'train')
+        if not os.path.exists(self.tfrec_dir):
+            os.makedirs(train_dir)
 
-        filename = os.path.join(dir, filename + '.tfrecords')
+        filename = os.path.join(train_dir, filename + '.tfrecords')
         print('Writing', filename)
         writer = tf.python_io.TFRecordWriter(filename)
 
@@ -130,7 +143,7 @@ class TF_rec_converter:
         for tr in range(len(trajectory_list)):
 
             traj = trajectory_list[tr]
-            sequence_length = traj._sample_images.shape[0]
+            sequence_length = traj.T
 
             for tstep in range(sequence_length):
 
@@ -158,12 +171,15 @@ class TF_rec_converter:
 
 if __name__ == "__main__":
 
-    sourcedirs =['/home/guser/sawyer_data/main',
-                 '/home/guser/sawyer_data/aux1']
+    # sourcedirs =['/home/guser/sawyer_data/main',
+    #              '/home/guser/sawyer_data/aux1']
 
+    sourcedirs =["/home/frederik/Documents/sawyer_data/test_recording/main",
+                 "/home/frederik/Documents/sawyer_data/test_recording/aux1"]
 
-    targetdir = '/home/frederik/Documents/sawyer_data/gathered_data/'
-    tf_rec_dir = '/home/frederik/Documetns/lsdc/pushing/data/'
+    gif_dir = '/home/frederik/Documents/sawyer_data/gathered_data/'
+    tf_rec_dir = '/home/frederik/Documetns/lsdc/pushing/sawyer_2cam/'
+
     tfrec_converter = TF_rec_converter()
-    tfrec_converter.gather(sourcedirs, targetdir)
+    tfrec_converter.gather(sourcedirs, tfrec_dir = tf_rec_dir)
 

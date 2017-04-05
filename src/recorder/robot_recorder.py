@@ -273,6 +273,8 @@ class RobotRecorder(object):
                 dict= {'jointangles': joint_angles,
                        'actions': actions}
                 cPickle.dump(dict, f)
+            self.action_list = []
+            self.joint_angle_list = []
 
     def delete_traj(self, tr):
         assert self.instance_type == 'main'
