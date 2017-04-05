@@ -24,8 +24,8 @@ class Trajectory(object):
         self.images = np.zeros((self.T, self.n_cam, 64, 64, 3), dtype = np.uint8)  # n_cam=0: main, n_cam=1: aux1
         self.dimages = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.uint8)
         self.dvalues = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.float32)
-        self.actions = np.zeros((self.T))
-
+        self.actions = np.zeros((self.T), 7)
+        self.joint_angles = np.zeros((self.T), 7)
 
 class TF_rec_converter:
     def __init__(self):
@@ -33,13 +33,11 @@ class TF_rec_converter:
 
     def gather(self, sourcedirs, gif_dir= None, tfrec_dir = None):
 
-
         # go to first source and get group names:
         groupnames = glob.glob(os.path.join(sourcedirs[0], '*'))
         groupnames = [str.split(n, '/')[-1] for n in groupnames]
 
         self.src_names = [str.split(n, '/')[-1] for n in sourcedirs]
-
 
         traj_list = []
         ntraj_max = 7
@@ -60,7 +58,8 @@ class TF_rec_converter:
 
                 #load actions:
                 actions = cPickle.load(open(traj_dir_main + '', "rb"))
-                actions[]
+                traj.actions = actions['actions']
+                traj.joint_angles = actions['jointangles']
 
                 for i_src, src in enumerate(sourcedirs):  # loop over main, aux1, ..
 
@@ -98,6 +97,7 @@ class TF_rec_converter:
                         im = np.asarray(im)
                         traj.dimages[t, i_src] = im
 
+
                 traj_list.append(traj)
                 itraj += 1
 
@@ -115,7 +115,6 @@ class TF_rec_converter:
                         create_gif.comp_video(traj_list, gif_dir)
                         print 'created gif, exiting'
                         return
-
 
     def save_tf_record(self, dir, filename, trajectory_list):
         """
@@ -135,22 +134,21 @@ class TF_rec_converter:
 
             for tstep in range(sequence_length):
 
+                feature[str(tstep) + '/action']= _float_feature(traj.actions.tolist())
+                feature[str(tstep) + '/jointangles'] = _float_feature(traj.joint_angles.tolist())
 
-                feature['move/' + str(tstep) + '/action']= _float_feature(traj.U[tstep,:].tolist())
-                feature['move/' + str(tstep) + '/state'] = _float_feature(traj.X_Xdot_full[tstep,:].tolist())
-
-                image_raw = traj.images[tstep, 0].tostring()  # for camera 0, i.e. main
-                feature['move/' + str(tstep) + '/image_main/encoded'] = _bytes_feature(image_raw)
-                image_raw = traj.images[tstep, 1].tostring()  # for camera 1, i.e. aux1
-                feature['move/' + str(tstep) + '/image_aux1/encoded'] = _bytes_feature(image_raw)
+                feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 0].tolist())
+                feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 1].tolist())
 
                 image_raw = traj.images[tstep, 0].tostring()  # for camera 0, i.e. main
-                feature['move/' + str(tstep) + '/image_main/encoded'] = _bytes_feature(image_raw)
+                feature[str(tstep) + '/image_main/encoded'] = _bytes_feature(image_raw)
                 image_raw = traj.images[tstep, 1].tostring()  # for camera 1, i.e. aux1
-                feature['move/' + str(tstep) + '/image_aux1/encoded'] = _bytes_feature(image_raw)
+                feature[str(tstep) + '/image_aux1/encoded'] = _bytes_feature(image_raw)
 
-
-
+                image_raw = traj.images[tstep, 0].tostring()  # for camera 0, i.e. main
+                feature[str(tstep) + '/image_main/encoded'] = _bytes_feature(image_raw)
+                image_raw = traj.images[tstep, 1].tostring()  # for camera 1, i.e. aux1
+                feature[str(tstep) + '/image_aux1/encoded'] = _bytes_feature(image_raw)
 
             example = tf.train.Example(features=tf.train.Features(feature=feature))
             writer.write(example.SerializeToString())
@@ -160,10 +158,12 @@ class TF_rec_converter:
 
 if __name__ == "__main__":
 
-    sourcedirs =['/home/frederik/Documents/sawyer_data/test_recording/main',
-                 '/home/frederik/Documents/sawyer_data/test_recording/aux1']
+    sourcedirs =['/home/guser/sawyer_data/main',
+                 '/home/guser/sawyer_data/aux1']
+
 
     targetdir = '/home/frederik/Documents/sawyer_data/gathered_data/'
     tf_rec_dir = '/home/frederik/Documetns/lsdc/pushing/data/'
     tfrec_converter = TF_rec_converter()
     tfrec_converter.gather(sourcedirs, targetdir)
+

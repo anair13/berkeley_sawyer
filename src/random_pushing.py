@@ -45,7 +45,7 @@ class RandomPusher(object):
                     self.run_trajectory_smooth(tr)
                     done = True
                 except ValueError:
-                    self.recorder.delete(tr)
+                    self.recorder._delete_traj_local(tr)
 
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())

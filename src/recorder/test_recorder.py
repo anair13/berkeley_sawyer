@@ -21,12 +21,12 @@ def unit_test():
         # rec.init_traj(tr)
         for i in range(3):
             rospy.loginfo("saving image {}".format(i))
-            rec.save(i)
+            rec._save_img_local(i)
             rospy.sleep(.5)
 
 
 
 if __name__ == "__main__":
     rospy.loginfo("starting testnode...")
-    rospy.init_node('rec_unittest')
+    # rospy.init_node('rec_unittest')
     unit_test()

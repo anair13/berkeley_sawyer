@@ -56,6 +56,7 @@ find_package(catkin REQUIRED COMPONENTS
    FILES
    get_kinectdata.srv
    init_traj.srv
+   delete_traj.srv
  )
 
 ## Generate actions in the 'action' folder
