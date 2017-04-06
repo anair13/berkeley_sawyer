@@ -165,6 +165,8 @@ class Primitive_Executor(object):
                 action_vec, des_joint_angles, des_cartpos = self.act(i_act)  # after completing trajectory save final state
                 i_act += 1
 
+                print 'current position error', des_cartpos - self.get_endeffector_pos(pos_only=True)
+
             try:
                 if self.robot_move:
                     self.ctrl.limb.set_joint_positions(des_joint_angles)
@@ -177,8 +179,9 @@ class Primitive_Executor(object):
                 rospy.sleep(.5)
                 raise Traj_aborted_except('raising Traj_aborted_except')
 
-            # print 'current position error', des_cartpos - self.get_endeffector_pos(pos_only=True)
+
             if self.curr_delta_time > tsave[i_save]:
+
                 print 'saving index{}'.format(i_save)
                 self.recorder.save(i_save, action_vec)
                 i_save += 1

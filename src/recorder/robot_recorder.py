@@ -96,7 +96,7 @@ class RobotRecorder(object):
             thread.start_new(spin_thread, ())
             print "Recorder intialized."
             print "started spin thread"
-            self.action_list, self.joint_angle_list = [], []
+            self.action_list, self.joint_angle_list, self.cart_pos_list = [], [], []
 
 
     def get_kinect_handler(self, req):
@@ -263,6 +263,8 @@ class RobotRecorder(object):
 
         self.joint_angle_list.append(angles_right)
         self.action_list.append(action)
+        # self.cart_pos_list.append(self._limb_right.)
+        #TODO: get cartesian pose!!
 
         if i_tr == self.state_sequence_length-1:
             joint_angles = np.stack(self.joint_angle_list)
@@ -272,6 +274,10 @@ class RobotRecorder(object):
                 dict= {'jointangles': joint_angles,
                        'actions': actions}
                 cPickle.dump(dict, f)
+            self.action_list = []
+            self.joint_angle_list = []
+            self.cart_pos_list = []
+
 
     def delete_traj(self, tr):
         assert self.instance_type == 'main'
@@ -307,13 +313,11 @@ class RobotRecorder(object):
 
         #rospy.loginfo("time to complete service {}".format(rospy.get_time()- self.t_savereq))
 
-
-        t_beforesave = rospy.get_time()
         try:
             self._save_img_local(i_tr)
             self._save_state_actions(i_tr, action, endeffector_pose)
         except ValueError:
-            return
+            raise ValueError("saving not successful!")
 
         #rospy.loginfo("complete time to save locally {}".format(rospy.get_time() - t_beforesave))
 
