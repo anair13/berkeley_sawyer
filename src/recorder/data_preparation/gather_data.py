@@ -32,12 +32,14 @@ class TF_rec_converter:
     def __init__(self):
         pass
 
-    def gather(self, sourcedirs, gif_dir= None, tfrec_dir = None):
+    def gather(self, sourcedirs, gif_dir= None, tf_rec_dir = None):
 
         self.tfrec_dir = tf_rec_dir
         for dirs in sourcedirs:
             if not os.path.exists(dirs):
                 raise ValueError('path {} does not exist!'.format(dirs))
+        if not os.path.exists(tf_rec_dir):
+            raise ValueError('path {} does not exist!'.format(tf_rec_dir))
 
         # go to first source and get group names:
         groupnames = glob.glob(os.path.join(sourcedirs[0], '*'))
@@ -57,6 +59,7 @@ class TF_rec_converter:
 
 
             for trajname in trajnames:  # loop of traj0, traj1,..
+                print 'processing', trajname
 
                 traj_index = re.match('.*?([0-9]+)$', trajname).group(1)
 
@@ -107,12 +110,15 @@ class TF_rec_converter:
                         im = np.asarray(im)
                         traj.dimages[t, i_src] = im
 
+                        file = glob.glob(traj_dir_src +'/depth_images/{0}_depth_im{1}_*.pkl'.format(self.src_names[i_src], t))
+                        file = file[0]
+                        traj.dvalues[t, i_src] = cPickle.load(open(file, "rb"))
 
                 traj_list.append(traj)
                 itraj += 1
 
                 if tf_rec_dir != None:
-                    if len(traj_list) == 10:
+                    if len(traj_list) == 256:
 
                         filename = 'traj_{0}_to_{1}' \
                             .format(traj_start_ind, itraj)
@@ -147,11 +153,11 @@ class TF_rec_converter:
 
             for tstep in range(sequence_length):
 
-                feature[str(tstep) + '/action']= _float_feature(traj.actions.tolist())
-                feature[str(tstep) + '/jointangles'] = _float_feature(traj.joint_angles.tolist())
+                # feature[str(tstep) + '/action']= _float_feature(traj.actions.tolist())
+                # feature[str(tstep) + '/jointangles'] = _float_feature(traj.joint_angles.tolist())
 
-                feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 0].tolist())
-                feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 1].tolist())
+                feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 0].flatten().tolist())
+                feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 1].flatten().tolist())
 
                 image_raw = traj.images[tstep, 0].tostring()  # for camera 0, i.e. main
                 feature[str(tstep) + '/image_main/encoded'] = _bytes_feature(image_raw)
@@ -174,12 +180,12 @@ if __name__ == "__main__":
     # sourcedirs =['/home/guser/sawyer_data/main',
     #              '/home/guser/sawyer_data/aux1']
 
-    sourcedirs =["/home/frederik/Documents/sawyer_data/test_recording/main",
-                 "/home/frederik/Documents/sawyer_data/test_recording/aux1"]
+    sourcedirs =["/media/frederik/harddrive/sawyerdata/testrecording/main",
+                 "/media/frederik/harddrive/sawyerdata/testrecording/aux1"]
 
     gif_dir = '/home/frederik/Documents/sawyer_data/gathered_data/'
-    tf_rec_dir = '/home/frederik/Documetns/lsdc/pushing/sawyer_2cam/'
+    tf_rec_dir = '/home/frederik/Documents/lsdc/pushing_data/sawyer_2cam/'
 
     tfrec_converter = TF_rec_converter()
-    tfrec_converter.gather(sourcedirs, tfrec_dir = tf_rec_dir)
+    tfrec_converter.gather(sourcedirs, tf_rec_dir = tf_rec_dir)
 

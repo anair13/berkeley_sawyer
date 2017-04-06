@@ -23,7 +23,6 @@ def npy_to_gif(im_list, filename):
     return
 
 
-
 def comp_video(traj_list, file_path):
     vid_batch = []
     for cam in range(len(traj_list[0].cameranames)):
