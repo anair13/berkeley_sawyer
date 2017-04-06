@@ -203,18 +203,17 @@ class RobotRecorder(object):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
 
-        if ((itr+1) % self.ngroup) == 0:
-            self.igrp += 1
-
-
         try:
-            rospy.wait_for_service('init_traj', timeout=0.05)
+            rospy.wait_for_service('init_traj', timeout=0.1)
             resp1 = self.init_traj_func(itr, self.igrp)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
 
         self._init_traj_local(itr)
+
+        if ((itr+1) % self.ngroup) == 0:
+            self.igrp += 1
 
 
     def _init_traj_local(self, itr):
@@ -277,7 +276,7 @@ class RobotRecorder(object):
     def delete_traj(self, tr):
         assert self.instance_type == 'main'
         try:
-            rospy.wait_for_service('delete_traj', 0.01)
+            rospy.wait_for_service('delete_traj', 0.1)
             resp1 = self.delete_traj_func(tr)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
@@ -290,14 +289,14 @@ class RobotRecorder(object):
         shutil.rmtree(traj_folder)
         print 'deleted {}'.format(traj_folder)
 
-    def save(self, i_tr, action):
+    def save(self, i_tr, action, endeffector_pose):
         self.t_savereq = rospy.get_time()
         assert self.instance_type == 'main'
 
         # request save at auxiliary recorders
         try:
             # t1 = rospy.get_time()
-            rospy.wait_for_service('get_kinectdata', 0.01)
+            rospy.wait_for_service('get_kinectdata', 0.1)
             #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
             # t2 = rospy.get_time()
             resp1 = self.get_kinectdata_func(i_tr)
@@ -312,7 +311,7 @@ class RobotRecorder(object):
         t_beforesave = rospy.get_time()
         try:
             self._save_img_local(i_tr)
-            self._save_state_actions(i_tr, action)
+            self._save_state_actions(i_tr, action, endeffector_pose)
         except ValueError:
             return
 

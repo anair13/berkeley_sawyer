@@ -13,6 +13,7 @@ import inverse_kinematics
 import robot_controller
 from recorder import robot_recorder
 import os
+import cPickle
 
 
 class Traj_aborted_except(Exception):
@@ -53,7 +54,6 @@ class Primitive_Executor(object):
             print 'resuming data collection at trajectory {} in group {}'.format(start_tr, start_grp)
             self.recorder.igrp = start_grp
             self.recorder.delete_traj(start_tr)
-            pdb.set_trace()
         else:
             start_tr = 0
 
@@ -72,8 +72,10 @@ class Primitive_Executor(object):
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
 
-            self.write_ckpt(tr, self.recorder.igrp)
+            if (tr% 40) == 0:
+                self.redistribute_objects()
 
+            self.write_ckpt(tr, self.recorder.igrp)
 
         self.ctrl.set_neutral()
 
@@ -183,7 +185,7 @@ class Primitive_Executor(object):
 
         action_vec = np.zeros_like(action_vec)
         #saving the final state:
-        self.recorder.save(i_save, action_vec)
+        self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
 
     def act(self, i_act):
 
@@ -272,6 +274,35 @@ class Primitive_Executor(object):
 
         return  pos
 
+
+    def redistribute_objects(self):
+        """
+        Loops playback of recorded joint position waypoints until program is
+        exited
+        """
+        with open('src/waypts.pkl', 'r') as f:
+            waypoints = cPickle.load(f)
+        rospy.loginfo("Waypoint Playback Started")
+
+        # Set joint position speed ratio for execution
+        self.ctrl.limb.set_joint_position_speed(.2)
+
+        # Loop until program is exited
+        do_repeat = True
+        n_repeat = 0
+        while do_repeat and (n_repeat < 3):
+            do_repeat = False
+            n_repeat += 1
+            for i, waypoint in enumerate(waypoints):
+                if rospy.is_shutdown():
+                    break
+                try:
+                    print 'going to waypoint ', i
+                    self.ctrl.limb.move_to_joint_positions(waypoint, timeout=5.0)
+                except:
+                    do_repeat = True
+                    break
+            rospy.sleep(1.0)
 
 def main():
     pexec = Primitive_Executor()
