@@ -110,6 +110,7 @@ class RobotRecorder(object):
         return init_trajResponse()
 
     def delete_traj_handler(self, req):
+        self.igrp = req.igrp
         self._delete_traj_local(req.itr)
         return delete_trajResponse()
 
@@ -195,10 +196,6 @@ class RobotRecorder(object):
         return img
 
 
-    def set_igrp(self, igrp):
-        self.igrp = igrp
-
-
     def init_traj(self, itr):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
@@ -252,7 +249,7 @@ class RobotRecorder(object):
                 captions = joints_right + action_names
                 f.write(','.join(captions) + ',' + '\n')
 
-    def _save_state_actions(self, i_tr, action):
+    def _save_state_actions(self, i_tr, action, endeffector_pose):
         joints_right = self._limb_right.joint_names()
         with open(self.state_action_data_file, 'a') as f:
             angles_right = [self._limb_right.joint_angle(j)
@@ -263,8 +260,8 @@ class RobotRecorder(object):
 
         self.joint_angle_list.append(angles_right)
         self.action_list.append(action)
-        # self.cart_pos_list.append(self._limb_right.)
-        #TODO: get cartesian pose!!
+        self.cart_pos_list.append(endeffector_pose)
+
 
         if i_tr == self.state_sequence_length-1:
             joint_angles = np.stack(self.joint_angle_list)
@@ -279,11 +276,11 @@ class RobotRecorder(object):
             self.cart_pos_list = []
 
 
-    def delete_traj(self, tr):
+    def delete_traj(self, tr, igrp):
         assert self.instance_type == 'main'
         try:
             rospy.wait_for_service('delete_traj', 0.1)
-            resp1 = self.delete_traj_func(tr)
+            resp1 = self.delete_traj_func(tr, igrp)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('delete traj service failed')

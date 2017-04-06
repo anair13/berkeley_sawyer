@@ -188,6 +188,7 @@ class Primitive_Executor(object):
 
         action_vec = np.zeros_like(action_vec)
         #saving the final state:
+        pdb.set_trace()
         self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
 
     def act(self, i_act):
