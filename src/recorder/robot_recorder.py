@@ -341,8 +341,8 @@ class RobotRecorder(object):
 
             startcol = 220
             startrow = 0
-            endcol = startcol + 1200
-            endrow = startrow + 1200
+            endcol = startcol + 1400
+            endrow = startrow + 1400
             # crop image:
             self.ltob.img_cv2 = self.ltob.img_cv2[startrow:endrow, startcol:endcol]
 
