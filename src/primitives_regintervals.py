@@ -8,6 +8,7 @@ from intera_core_msgs.srv import (
     SolvePositionFKRequest,
 )
 from sensor_msgs.msg import JointState
+from std_msgs.msg import String
 
 import inverse_kinematics
 import robot_controller
@@ -24,14 +25,16 @@ class Primitive_Executor(object):
 
         self.num_traj = 50000
 
+        # must be an uneven number
         self.state_sequence_length = 30 # number of snapshots that are taken
-        self.num_act = self.state_sequence_length / 2 - 1  # number of different positions on trajectory
+
 
         self.ctrl = robot_controller.RobotController()
         self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/testrecording",
                                                      start_loop=False,
                                                      seq_len = self.state_sequence_length)
 
+        self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
         # drive to neutral position:
         self.ctrl.set_neutral()
         import pdb; pdb.set_trace()
@@ -40,7 +43,7 @@ class Primitive_Executor(object):
         self.name_of_service = "ExternalTools/" + limb + "/PositionKinematicsNode/FKService"
         self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
 
-        self.close_nstep, self.tclose, self.up_nstep, self.t_up = None, None, None, None
+        self.topen, self.t_down = None, None
         self.robot_move = True
         self.checkpoint_file = os.path.join(self.recorder.save_dir, 'checkpoint.txt')
 
@@ -53,11 +56,17 @@ class Primitive_Executor(object):
             start_tr, start_grp = self.parse_ckpt()
             print 'resuming data collection at trajectory {} in group {}'.format(start_tr, start_grp)
             self.recorder.igrp = start_grp
-            self.recorder.delete_traj(start_tr)
+            try:
+                self.recorder.delete_traj(start_tr)
+                self.recorder.delete_traj(start_tr+1)
+            except:
+                print 'trajectory was not deleted'
         else:
             start_tr = 0
 
         for tr in range(start_tr, self.num_traj):
+
+            self.alive_publisher.publish('still alive!')
 
             tstart = datetime.now()
             # self.run_trajectory_const_speed(tr)
@@ -72,7 +81,7 @@ class Primitive_Executor(object):
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
 
-            if (tr% 40) == 0:
+            if (tr% 30) == 0 and tr!= 0:
                 self.redistribute_objects()
 
             self.write_ckpt(tr, self.recorder.igrp)
@@ -127,20 +136,22 @@ class Primitive_Executor(object):
         self.ctrl.set_neutral(speed= 0.3)
         self.ctrl.gripper.open()
         self.gripper_closed = False
-        self.gripper_up = True
+        self.gripper_up = False
         self.recorder.init_traj(i_tr)
 
-        self.lower_height = 0.22
+        self.lower_height = 0.21
         self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
         self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
-        self.des_pos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]),
-                        np.random.uniform(self.ylim[0], self.ylim[1])])
 
+        startpos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]), np.random.uniform(self.ylim[0], self.ylim[1])])
+        self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height])], axis=0)
 
-        self.close_nstep, self.tclose, self.up_nstep, self.t_up = 0, 0, 0, 0
-        self.next_wypt = np.array([self.des_pos[0], self.des_pos[1], self.lower_height])
+        self.topen, self.t_down = 0, 0
 
         duration = 10  # duration of trajectory in seconds
+
+        #move to start:
+        self.move_to_startpos()
 
         start_time = rospy.get_time()  # in seconds
         finish_time = start_time + duration  # in seconds
@@ -149,8 +160,7 @@ class Primitive_Executor(object):
 
         tsave = np.linspace(0, duration, self.state_sequence_length)
         print 'save times', tsave
-        tact = np.linspace(0, duration,
-                           self.num_act + 1)  # +1 because the first time is when the endeffecotr is at the initial position
+        tact = tsave[::2]
         print 'cmd new pos times ', tact
 
         i_act = 0  # index of current commanded point
@@ -161,15 +171,16 @@ class Primitive_Executor(object):
         while rospy.get_time() < finish_time:
             self.curr_delta_time = rospy.get_time() - start_time
 
-            if self.curr_delta_time > tact[i_act]:
-                action_vec, des_joint_angles, des_cartpos = self.act(i_act)  # after completing trajectory save final state
-                i_act += 1
-
-                print 'current position error', des_cartpos - self.get_endeffector_pos(pos_only=True)
+            if i_act < len(tact):
+                if self.curr_delta_time > tact[i_act]:
+                    # print 'current position error', self.des_pos - self.get_endeffector_pos(pos_only=True)
+                    action_vec, des_joint_angles = self.act(i_act)  # after completing trajectory save final state
+                    i_act += 1
 
             try:
                 if self.robot_move:
                     self.ctrl.limb.set_joint_positions(des_joint_angles)
+                    # print des_joint_angles
             except OSError:
                 rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
                 rospy.sleep(.5)
@@ -183,71 +194,105 @@ class Primitive_Executor(object):
             if self.curr_delta_time > tsave[i_save]:
 
                 print 'saving index{}'.format(i_save)
-                self.recorder.save(i_save, action_vec)
+                print 'action vec', action_vec
+                self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
                 i_save += 1
 
-        action_vec = np.zeros_like(action_vec)
         #saving the final state:
-        pdb.set_trace()
         self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
+
+        # stact = cPickle.load(open(self.recorder.state_action_pkl_file, 'r'))
+        # print stact['jointangles']
+        # print stact['actions']
+        # print stact['endeffector_pos']
+        # pdb.set_trace()
+
+    def move_to_startpos(self):
+        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
+                                                           self.des_pos[1],
+                                                           self.des_pos[2],
+                                                           inverse_kinematics.EXAMPLE_O)
+        start_joints = self.ctrl.limb.joint_angles()
+        try:
+            des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
+                                                                   use_advanced_options=True)
+        except ValueError:
+            rospy.logerr('no inverse kinematics solution found, '
+                         'going to reset robot...')
+            current_joints = self.ctrl.limb.joint_angles()
+            self.ctrl.limb.set_joint_positions(current_joints)
+            raise Traj_aborted_except('raising Traj_aborted_except')
+        try:
+            if self.robot_move:
+                self.ctrl.limb.move_to_joint_positions(des_joint_angles)
+        except OSError:
+            rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
+            rospy.sleep(.5)
+            raise Traj_aborted_except('raising Traj_aborted_except')
+        if self.ctrl.limb.has_collided():
+            rospy.logerr('collision detected!!!')
+            rospy.sleep(.5)
+            raise Traj_aborted_except('raising Traj_aborted_except')
 
     def act(self, i_act):
 
         # sample action type:
         noptions = 3
+
         action = np.random.choice(range(noptions), p=[0.70, 0.2, 0.1])
+
         print 'action: ', i_act
         if action == 0:
             maxshift = .1
-            posshift = np.random.uniform(-maxshift, maxshift, 2)
+            posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2), np.zeros(1)))
             self.des_pos += posshift
             self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
-            self.next_wypt[0] = self.des_pos[0]
-            self.next_wypt[1] = self.des_pos[1]
-            print 'move to ', self.next_wypt
+            print 'move to ', self.des_pos
         else:
             posshift = np.zeros(2)
+
         if action == 1:  # close gripper and hold for n steps
-            self.close_nstep = np.random.randint(3, 5)
-            print 'close and hold for ', self.close_nstep
-            self.tclose = i_act
+            close_cmd = np.random.randint(3, 5)
+            print 'close and hold for ', close_cmd
+            close_cmd = close_cmd
+            self.topen = i_act + close_cmd
             self.ctrl.gripper.close()
             self.gripper_closed = True
         else:
-            close_nstep = 0
+            close_cmd = 0
+
         if action == 2:  # go up for n steps
-            self.up_nstep = np.random.randint(3, 5)
-            self.t_up = i_act
+            up_cmd = np.random.randint(3, 5)
+            self.t_down = i_act + up_cmd
             delta_up = .1
-            self.next_wypt[2] = self.lower_height + delta_up
+            self.des_pos[2] = self.lower_height + delta_up
             self.gripper_up = True
-            print 'stay up for ', self.up_nstep
+            print 'stay up for ', up_cmd
         else:
-            up_nstep = 0
+            up_cmd = 0
+
         if self.gripper_closed:
-            if i_act > (self.tclose + self.close_nstep):
+            if i_act == self.topen:
                 self.ctrl.gripper.open()
                 print 'opening gripper'
                 self.gripper_closed = False
+
         if self.gripper_up:
-            if i_act > (self.t_up + self.up_nstep):
-                self.next_wypt[2] = self.lower_height
+            if i_act == self.t_down:
+                self.des_pos[2] = self.lower_height
                 print 'going down'
                 self.gripper_up = False
 
-        print 'gripper closed: ', self.gripper_closed
 
-        action_vec = np.array([1 if action == 0 else 0,  # move
+        action_vec = np.array([
                                posshift[0],
                                posshift[1],
-                               1 if action == 1 else 0,  # close
-                               self.close_nstep,
-                               1 if action == 2 else 0,  # up nstep
-                               self.up_nstep
+                               close_cmd,
+                               up_cmd
                                ])
-        desired_pose = inverse_kinematics.get_pose_stamped(self.next_wypt[0],
-                                                           self.next_wypt[1],
-                                                           self.next_wypt[2],
+        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
+                                                           self.des_pos[1],
+                                                           self.des_pos[2],
                                                            inverse_kinematics.EXAMPLE_O)
         start_joints = self.ctrl.limb.joint_angles()
         try:
@@ -260,7 +305,7 @@ class Primitive_Executor(object):
             self.ctrl.limb.set_joint_positions(current_joints)
             raise Traj_aborted_except('raising Traj_aborted_except')
 
-        return action_vec, des_joint_angles, self.next_wypt
+        return action_vec, des_joint_angles
 
     def truncate_pos(self, pos):
 
@@ -284,7 +329,7 @@ class Primitive_Executor(object):
         Loops playback of recorded joint position waypoints until program is
         exited
         """
-        with open('src/waypts.pkl', 'r') as f:
+        with open('/home/guser/catkin_ws/src/berkeley_sawyer/src/waypts.pkl', 'r') as f:
             waypoints = cPickle.load(f)
         rospy.loginfo("Waypoint Playback Started")
 
@@ -294,7 +339,7 @@ class Primitive_Executor(object):
         # Loop until program is exited
         do_repeat = True
         n_repeat = 0
-        while do_repeat and (n_repeat < 3):
+        while do_repeat and (n_repeat < 2):
             do_repeat = False
             n_repeat += 1
             for i, waypoint in enumerate(waypoints):
@@ -306,7 +351,6 @@ class Primitive_Executor(object):
                 except:
                     do_repeat = True
                     break
-            rospy.sleep(1.0)
 
 def main():
     pexec = Primitive_Executor()

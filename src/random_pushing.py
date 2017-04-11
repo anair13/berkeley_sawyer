@@ -148,7 +148,7 @@ class RandomPusher(object):
                 rospy.sleep(.5)
                 raise ValueError
 
-            self.recorder.save(i_tr=itr)
+            self.recorder.save(i_save=itr)
 
 
     def run_trajectory_const_speed(self, i_tr):

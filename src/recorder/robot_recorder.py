@@ -249,38 +249,45 @@ class RobotRecorder(object):
                 captions = joints_right + action_names
                 f.write(','.join(captions) + ',' + '\n')
 
-    def _save_state_actions(self, i_tr, action, endeffector_pose):
+    def _save_state_actions(self, i_save, action, endeff_pose):
         joints_right = self._limb_right.joint_names()
         with open(self.state_action_data_file, 'a') as f:
             angles_right = [self._limb_right.joint_angle(j)
                             for j in joints_right]
-            f.write("%f," % (rospy.get_time(),))
-            values = np.concatenate([angles_right, action])
+
+            f.write("%f," % (i_save))
+            f.write("%i," % (rospy.get_time(),))
+
+            # values = np.concatenate([angles_right, action])
+            # only writing actions to text file
+            values = action
             f.write(','.join([str(x) for x in values]) + '\n')
 
         self.joint_angle_list.append(angles_right)
         self.action_list.append(action)
-        self.cart_pos_list.append(endeffector_pose)
+        self.cart_pos_list.append(endeff_pose)
 
 
-        if i_tr == self.state_sequence_length-1:
+        if i_save == self.state_sequence_length-1:
             joint_angles = np.stack(self.joint_angle_list)
             actions = np.stack(self.action_list)
+            endeffector_pos = np.stack(self.cart_pos_list)
 
             with open(self.state_action_pkl_file, 'wb') as f:
                 dict= {'jointangles': joint_angles,
-                       'actions': actions}
+                       'actions': actions,
+                       'endeffector_pos':endeffector_pos}
                 cPickle.dump(dict, f)
             self.action_list = []
             self.joint_angle_list = []
             self.cart_pos_list = []
 
 
-    def delete_traj(self, tr, igrp):
+    def delete_traj(self, tr):
         assert self.instance_type == 'main'
         try:
             rospy.wait_for_service('delete_traj', 0.1)
-            resp1 = self.delete_traj_func(tr, igrp)
+            resp1 = self.delete_traj_func(tr, self.igrp)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('delete traj service failed')
@@ -292,7 +299,7 @@ class RobotRecorder(object):
         shutil.rmtree(traj_folder)
         print 'deleted {}'.format(traj_folder)
 
-    def save(self, i_tr, action, endeffector_pose):
+    def save(self, i_save, action, endeffector_pose):
         self.t_savereq = rospy.get_time()
         assert self.instance_type == 'main'
 
@@ -302,7 +309,7 @@ class RobotRecorder(object):
             rospy.wait_for_service('get_kinectdata', 0.1)
             #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
             # t2 = rospy.get_time()
-            resp1 = self.get_kinectdata_func(i_tr)
+            resp1 = self.get_kinectdata_func(i_save)
             #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
@@ -311,10 +318,10 @@ class RobotRecorder(object):
         #rospy.loginfo("time to complete service {}".format(rospy.get_time()- self.t_savereq))
 
         try:
-            self._save_img_local(i_tr)
-            self._save_state_actions(i_tr, action, endeffector_pose)
+            self._save_img_local(i_save)
+            self._save_state_actions(i_save, action, endeffector_pose)
         except ValueError:
-            raise ValueError("saving not successful!")
+            raise ValueError("saving locally not successful!")
 
         #rospy.loginfo("complete time to save locally {}".format(rospy.get_time() - t_beforesave))
 
@@ -330,8 +337,18 @@ class RobotRecorder(object):
         #saving image
         # saving the full resolution image
         if self.ltob.img_cv2 is not None:
-            image_name =  self.image_folder+ "/" + pref + "_full_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
+            image_name =  self.image_folder+ "/" + pref + "_full_cropped_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
+
+            startcol = 420
+            startrow = 0
+            endcol = startcol + 1000
+            endrow = startrow + 1000
+            # crop image:
+            self.ltob.img_cv2 = self.ltob.img_cv2[startrow:endrow, startcol:endcol]
+
             cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            cv2.imshow('img', self.ltob.img_cv2)
+            pdb.set_trace()
         else:
             raise ValueError('img_cv2 no data received')
 
