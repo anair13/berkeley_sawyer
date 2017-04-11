@@ -339,12 +339,13 @@ class RobotRecorder(object):
         if self.ltob.img_cv2 is not None:
             image_name =  self.image_folder+ "/" + pref + "_full_cropped_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
 
-            startcol = 220
+            startcol = 180
             startrow = 0
-            endcol = startcol + 1600
-            endrow = startrow + 1600
+            endcol = startcol + 1500
+            endrow = startrow + 1500
             # crop image:
             self.ltob.img_cv2 = self.ltob.img_cv2[startrow:endrow, startcol:endcol]
+            self.ltob.img_cv2 = cv2.resize(self.ltob.img_cv2, (0, 0), fx=.75, fy=.75, interpolation=cv2.INTER_AREA)
 
             cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
         else:
