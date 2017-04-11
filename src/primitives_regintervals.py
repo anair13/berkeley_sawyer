@@ -37,7 +37,6 @@ class Primitive_Executor(object):
         self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
         # drive to neutral position:
         self.ctrl.set_neutral()
-        import pdb; pdb.set_trace()
 
         limb = 'right'
         self.name_of_service = "ExternalTools/" + limb + "/PositionKinematicsNode/FKService"

@@ -347,8 +347,6 @@ class RobotRecorder(object):
             self.ltob.img_cv2 = self.ltob.img_cv2[startrow:endrow, startcol:endcol]
 
             cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-            cv2.imshow('img', self.ltob.img_cv2)
-            pdb.set_trace()
         else:
             raise ValueError('img_cv2 no data received')
 
