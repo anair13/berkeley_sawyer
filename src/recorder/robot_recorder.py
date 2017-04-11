@@ -111,7 +111,10 @@ class RobotRecorder(object):
 
     def delete_traj_handler(self, req):
         self.igrp = req.igrp
-        self._delete_traj_local(req.itr)
+        try:
+            self._delete_traj_local(req.itr)
+        except:
+            pass
         return delete_trajResponse()
 
     def store_latest_d_im(self, data):
