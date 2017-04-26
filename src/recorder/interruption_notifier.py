@@ -10,8 +10,6 @@ class Interruption_notifier(object):
         rospy.init_node('interruption_notifier', anonymous=True)
         self.last_alive = rospy.get_time()
 
-
-
         thread.start_new(self.spin_thread, ())
 
 
