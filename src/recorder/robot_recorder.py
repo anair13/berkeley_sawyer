@@ -287,11 +287,11 @@ class RobotRecorder(object):
 
         #rospy.loginfo("time to complete service {}".format(rospy.get_time()- self.t_savereq))
 
-        try:
-            self._save_img_local(i_save)
-            self._save_state_actions(i_save, action, endeffector_pose)
-        except ValueError:
-            raise ValueError("saving locally not successful!")
+        # try:
+        self._save_img_local(i_save)
+        self._save_state_actions(i_save, action, endeffector_pose)
+        # except ValueError:
+        #     raise ValueError("saving locally not successful!")
 
         #rospy.loginfo("complete time to save locally {}".format(rospy.get_time() - t_beforesave))
 
@@ -390,4 +390,4 @@ class RobotRecorder(object):
 
 if __name__ ==  '__main__':
     print 'started'
-    rec = RobotRecorder('/home/guser/Documents/sawyer_data/testrecording')
+    rec = RobotRecorder('/home/guser/Documents/sawyer_data/newrecording')
