@@ -20,12 +20,13 @@ import create_gif
 class Trajectory(object):
     def __init__(self, cameranames):
         self.cameranames = cameranames
-        self.T = 15
+        self.T = 29
         self.n_cam = len(cameranames)
         self.images = np.zeros((self.T, self.n_cam, 64, 64, 3), dtype = np.uint8)  # n_cam=0: main, n_cam=1: aux1
         self.dimages = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.uint8)
         self.dvalues = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.float32)
-        self.actions = np.zeros((self.T, 7))
+        self.actions = None
+        self.endeffector_pos = None
         self.joint_angles = np.zeros((self.T, 7))
 
 class TF_rec_converter:
@@ -33,6 +34,8 @@ class TF_rec_converter:
         pass
 
     def gather(self, sourcedirs, gif_dir= None, tf_rec_dir = None):
+
+        nopkl_file = 0
 
         self.tfrec_dir = tf_rec_dir
         for dirs in sourcedirs:
@@ -69,10 +72,16 @@ class TF_rec_converter:
                 traj_subpath = '/'.join(str.split(traj_dir_main, '/')[-2:])
 
                 #load actions:
-                actions = cPickle.load(open(traj_dir_main +
-                                            '/joint_angles_traj{}.pkl'.format(traj_index), "rb"))
+                pkl_file = traj_dir_main + '/joint_angles_traj{}.pkl'.format(traj_index)
+                if not os.path.isfile(pkl_file):
+                    nopkl_file += 1
+                    print 'no pkl file found, file no: ', nopkl_file
+                    continue
+
+                actions = cPickle.load(open(pkl_file, "rb"))
                 traj.actions = actions['actions']
                 traj.joint_angles = actions['jointangles']
+                traj.endeffector_pos = actions['endeffector_pos']
 
                 for i_src, src in enumerate(sourcedirs):  # loop over main, aux1, ..
 
@@ -121,7 +130,7 @@ class TF_rec_converter:
                     if len(traj_list) == 256:
 
                         filename = 'traj_{0}_to_{1}' \
-                            .format(traj_start_ind, itraj)
+                            .format(traj_start_ind, itraj-1)
                         self.save_tf_record(filename, traj_list)
                         traj_start_ind = itraj
                         traj_list = []
@@ -153,7 +162,8 @@ class TF_rec_converter:
 
             for tstep in range(sequence_length):
 
-                # feature[str(tstep) + '/action']= _float_feature(traj.actions.tolist())
+                feature[str(tstep) + '/action']= _float_feature(traj.actions[tstep].tolist())
+                feature[str(tstep) + '/endeffector_pos'] = _float_feature(traj.endeffector_pos[tstep].tolist())
                 # feature[str(tstep) + '/jointangles'] = _float_feature(traj.joint_angles.tolist())
 
                 feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 0].flatten().tolist())
@@ -180,11 +190,11 @@ if __name__ == "__main__":
     # sourcedirs =['/home/guser/sawyer_data/main',
     #              '/home/guser/sawyer_data/aux1']
 
-    sourcedirs =["/media/frederik/harddrive/sawyerdata/testrecording/main",
-                 "/media/frederik/harddrive/sawyerdata/testrecording/aux1"]
+    sourcedirs =["/media/frederik/harddrive/sawyerdata/noup_29/main",
+                 "/media/frederik/harddrive/sawyerdata/noup_29/aux1"]
 
     gif_dir = '/home/frederik/Documents/sawyer_data/gathered_data/'
-    tf_rec_dir = '/home/frederik/Documents/lsdc/pushing_data/sawyer_2cam/'
+    tf_rec_dir = '/home/frederik/Documents/lsdc/pushing_data/sawyer_noup_29/'
 
     tfrec_converter = TF_rec_converter()
     tfrec_converter.gather(sourcedirs, tf_rec_dir = tf_rec_dir)
