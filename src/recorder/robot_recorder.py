@@ -284,19 +284,13 @@ class RobotRecorder(object):
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
-
         #rospy.loginfo("time to complete service {}".format(rospy.get_time()- self.t_savereq))
 
-        # try:
         self._save_img_local(i_save)
         self._save_state_actions(i_save, action, endeffector_pose)
-        # except ValueError:
-        #     raise ValueError("saving locally not successful!")
 
+        # timing:
         #rospy.loginfo("complete time to save locally {}".format(rospy.get_time() - t_beforesave))
-
-        # timing statistics:
-
         # d_times = [delta_req_store_dimage, delta_req_store_image, complete_time_save]
         # if not (d_times < 0.4).all():
         #     raise ValueError("images could not be captured in time!")
