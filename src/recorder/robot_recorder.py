@@ -13,6 +13,9 @@ from berkeley_sawyer.srv import *
 from PIL import Image
 import cPickle
 
+from rospy_tutorials.msg import Floats
+from rospy.numpy_msg import numpy_msg
+
 
 class Latest_observation(object):
     def __init__(self):
@@ -53,22 +56,20 @@ class RobotRecorder(object):
             # them main instance one also records actions and joint angles
             self.instance_type = 'main'
 
-
         if self.instance_type =='main': #if it is running on kullback
             self._gripper = None
             self.gripper_name = '_'.join([side, 'gripper'])
             import intera_interface
             self._limb_right = intera_interface.Limb(side)
 
-
         prefix = self.instance_type
 
         rospy.Subscriber(prefix + "/kinect2/hd/image_color", Image_msg, self.store_latest_im)
         rospy.Subscriber(prefix + "/kinect2/sd/image_depth_rect", Image_msg, self.store_latest_d_im)
 
-
         self.save_dir = save_dir
         self.ltob = Latest_observation()
+        self.ltob_aux1 = Latest_observation()
 
         self.bridge = CvBridge()
 
@@ -84,6 +85,7 @@ class RobotRecorder(object):
             rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
             rospy.Service('delete_traj', delete_traj, self.delete_traj_handler)
+
             rospy.spin()
         else:
             # initializing the client:
@@ -102,7 +104,8 @@ class RobotRecorder(object):
     def get_kinect_handler(self, req):
         self.t_savereq = rospy.get_time()
         self._save_img_local(req.itr)
-        return get_kinectdataResponse(self.ltob.img_msg, self.ltob.d_img_msg)
+        img = np.asarray(self.ltob.img_cropped)
+        return get_kinectdataResponse(numpy_msg(img))
 
     def init_traj_handler(self, req):
         self.igrp = req.igrp
@@ -164,11 +167,6 @@ class RobotRecorder(object):
         # ))
 
     def store_latest_im(self, data):
-        # rospy.loginfo('storing color image')
-        # if self.ltob.tstamp_img != None:
-        #     rospy.loginfo("time difference to last stored img: {}".format(
-        #         rospy.get_time() - self.ltob.tstamp_img
-        #     ))
 
         self.ltob.img_msg = data
         self.ltob.tstamp_img = rospy.get_time()
@@ -252,6 +250,57 @@ class RobotRecorder(object):
                 captions = joints_right + action_names
                 f.write(','.join(captions) + ',' + '\n')
 
+
+    def delete_traj(self, tr):
+        assert self.instance_type == 'main'
+        try:
+            rospy.wait_for_service('delete_traj', 0.1)
+            resp1 = self.delete_traj_func(tr, self.igrp)
+        except (rospy.ServiceException, rospy.ROSException), e:
+            rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('delete traj service failed')
+        self._delete_traj_local(tr)
+
+    def _delete_traj_local(self, i_tr):
+        self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
+        traj_folder = self.group_folder + '/traj{}'.format(i_tr)
+        shutil.rmtree(traj_folder)
+        print 'deleted {}'.format(traj_folder)
+
+    def save(self, i_save, action, endeffector_pose):
+        self.t_savereq = rospy.get_time()
+        assert self.instance_type == 'main'
+
+        # request save at auxiliary recorders
+        try:
+            # t1 = rospy.get_time()
+            rospy.wait_for_service('get_kinectdata', 0.1)
+            #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
+            # t2 = rospy.get_time()
+            resp1 = self.get_kinectdata_func(i_save)
+            self.ltob_aux1.img_cropped = resp1.image
+
+            #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
+        except (rospy.ServiceException, rospy.ROSException), e:
+            rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('get_kinectdata service failed')
+
+        #rospy.loginfo("time to complete service {}".format(rospy.get_time()- self.t_savereq))
+
+        # try:
+        self._save_img_local(i_save)
+        self._save_state_actions(i_save, action, endeffector_pose)
+        # except ValueError:
+        #     raise ValueError("saving locally not successful!")
+
+        #rospy.loginfo("complete time to save locally {}".format(rospy.get_time() - t_beforesave))
+
+        # timing statistics:
+
+        # d_times = [delta_req_store_dimage, delta_req_store_image, complete_time_save]
+        # if not (d_times < 0.4).all():
+        #     raise ValueError("images could not be captured in time!")
+
     def _save_state_actions(self, i_save, action, endeff_pose):
         joints_right = self._limb_right.joint_names()
         with open(self.state_action_data_file, 'a') as f:
@@ -284,55 +333,6 @@ class RobotRecorder(object):
             self.action_list = []
             self.joint_angle_list = []
             self.cart_pos_list = []
-
-
-    def delete_traj(self, tr):
-        assert self.instance_type == 'main'
-        try:
-            rospy.wait_for_service('delete_traj', 0.1)
-            resp1 = self.delete_traj_func(tr, self.igrp)
-        except (rospy.ServiceException, rospy.ROSException), e:
-            rospy.logerr("Service call failed: %s" % (e,))
-            raise ValueError('delete traj service failed')
-        self._delete_traj_local(tr)
-
-    def _delete_traj_local(self, i_tr):
-        self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
-        traj_folder = self.group_folder + '/traj{}'.format(i_tr)
-        shutil.rmtree(traj_folder)
-        print 'deleted {}'.format(traj_folder)
-
-    def save(self, i_save, action, endeffector_pose):
-        self.t_savereq = rospy.get_time()
-        assert self.instance_type == 'main'
-
-        # request save at auxiliary recorders
-        try:
-            # t1 = rospy.get_time()
-            rospy.wait_for_service('get_kinectdata', 0.1)
-            #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
-            # t2 = rospy.get_time()
-            resp1 = self.get_kinectdata_func(i_save)
-            #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
-        except (rospy.ServiceException, rospy.ROSException), e:
-            rospy.logerr("Service call failed: %s" % (e,))
-            raise ValueError('get_kinectdata service failed')
-
-        #rospy.loginfo("time to complete service {}".format(rospy.get_time()- self.t_savereq))
-
-        # try:
-        self._save_img_local(i_save)
-        self._save_state_actions(i_save, action, endeffector_pose)
-        # except ValueError:
-        #     raise ValueError("saving locally not successful!")
-
-        #rospy.loginfo("complete time to save locally {}".format(rospy.get_time() - t_beforesave))
-
-        # timing statistics:
-
-        # d_times = [delta_req_store_dimage, delta_req_store_image, complete_time_save]
-        # if not (d_times < 0.4).all():
-        #     raise ValueError("images could not be captured in time!")
 
     def _save_img_local(self, i_tr):
 
