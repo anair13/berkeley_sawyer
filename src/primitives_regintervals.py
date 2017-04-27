@@ -94,7 +94,7 @@ class Primitive_Executor(object):
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
 
-            if (tr% 30) == 0 and tr!= 0:
+            if (tr% 1) == 0 and tr!= 0:
                 self.redistribute_objects()
 
             self.write_ckpt(tr, self.recorder.igrp)
@@ -399,7 +399,7 @@ class Primitive_Executor(object):
         # Loop until program is exited
         do_repeat = True
         n_repeat = 0
-        self.imp_ctrl_active.publish(0)
+        # self.imp_ctrl_active.publish(0)
         while do_repeat and (n_repeat < 2):
             do_repeat = False
             n_repeat += 1
@@ -408,11 +408,16 @@ class Primitive_Executor(object):
                     break
                 try:
                     print 'going to waypoint ', i
-                    self.ctrl.limb.move_to_joint_positions(waypoint, timeout=5.0)
+
+                    if self.imp_ctrl_active:
+                        self.imp_ctrl_release_spring(90)
+                        self.move_with_impedance_sec(waypoint, tsec=1.5)
+                    else:
+                        self.ctrl.limb.move_to_joint_positions(waypoint, timeout=5.0)
                 except:
                     do_repeat = True
                     break
-        self.imp_ctrl_active.publish(1)
+        # self.imp_ctrl_active.publish(1)
 
 def main():
     pexec = Primitive_Executor()

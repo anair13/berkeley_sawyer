@@ -183,12 +183,19 @@ class RobotRecorder(object):
 
     def crop_colorimg(self, cv_image):
         self.ltob.d_img_raw_npy = np.asarray(cv_image)
-        img = cv2.resize(cv_image, (0, 0), fx=1 / 15., fy=1 / 15., interpolation=cv2.INTER_AREA)
 
-        startcol = 27
-        startrow = 2
+        if self.instance_type == 'main':
+            img = cv2.resize(cv_image, (0, 0), fx=1 / 15., fy=1 / 15., interpolation=cv2.INTER_AREA)
+            startcol = 27
+            startrow = 2
+        else:
+            img = cv2.resize(cv_image, (0, 0), fx=1 / 10., fy=1 / 10., interpolation=cv2.INTER_AREA)
+            startcol = 27
+            startrow = 5
+
         endcol = startcol + 64
         endrow = startrow + 64
+
         # crop image:
         img = img[startrow:endrow, startcol:endcol]
 
