@@ -106,7 +106,7 @@ class RobotRecorder(object):
         self._save_img_local(req.itr)
         img = np.asarray(self.ltob.img_cropped)
         # return get_kinectdataResponse(numpy_msg(img))
-        return 
+        return get_kinectdataResponse()
 
     def init_traj_handler(self, req):
         self.igrp = req.igrp
