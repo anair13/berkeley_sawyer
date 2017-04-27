@@ -56,7 +56,7 @@ class Primitive_Executor(object):
 
         self.topen, self.t_down = None, None
         self.robot_move = True
-        self.save_active = False
+        self.save_active = True
         self.checkpoint_file = os.path.join(self.recorder.save_dir, 'checkpoint.txt')
 
         self.control_rate = rospy.Rate(1000)
@@ -94,7 +94,7 @@ class Primitive_Executor(object):
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
 
-            if (tr% 3) == 0 and tr!= 0: ###################################
+            if (tr% 30) == 0 and tr!= 0:
                 self.redistribute_objects()
 
             self.write_ckpt(tr, self.recorder.igrp)
@@ -237,6 +237,9 @@ class Primitive_Executor(object):
         self.imp_ctrl_release_spring_pub.publish(maxstiff)
 
     def move_with_impedance(self, des_joint_angles):
+        """
+        non-blocking
+        """
         js = JointState()
         js.name = self.ctrl.limb.joint_names()
         js.position = [des_joint_angles[n] for n in js.name]
