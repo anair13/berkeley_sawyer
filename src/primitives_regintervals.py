@@ -45,9 +45,10 @@ class Primitive_Executor(object):
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
 
         # drive to neutral position:
-        # self.ctrl.set_neutral() ######################
-        rospy.sleep(2)
-        self.set_neutral_with_impedance()
+        self.imp_ctrl_active.publish(0)
+        self.ctrl.set_neutral()
+        self.imp_ctrl_active.publish(1)
+        rospy.sleep(1)
         pdb.set_trace()
 
         limb = 'right'
