@@ -44,7 +44,7 @@ class Primitive_Executor(object):
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
 
-        rospy.sleep(.1)
+        rospy.sleep(1)
         # drive to neutral position:
         self.imp_ctrl_active.publish(0)
         self.ctrl.set_neutral()
@@ -167,7 +167,7 @@ class Primitive_Executor(object):
 
         self.topen, self.t_down = 0, 0
 
-        duration = 10  # duration of trajectory in seconds
+        duration = 12 # duration of trajectory in seconds
 
         #move to start:
         self.move_to_startpos()
