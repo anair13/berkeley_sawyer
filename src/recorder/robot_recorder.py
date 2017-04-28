@@ -189,7 +189,7 @@ class RobotRecorder(object):
             startcol = 27
             startrow = 2
         else:
-            img = cv2.resize(cv_image, (0, 0), fx=1 / 10., fy=1 / 10., interpolation=cv2.INTER_AREA)
+            img = cv2.resize(cv_image, (0, 0), fx=1 / 18., fy=1 / 18., interpolation=cv2.INTER_AREA)
             startcol = 27
             startrow = 5
 

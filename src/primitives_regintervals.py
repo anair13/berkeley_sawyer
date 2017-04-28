@@ -44,9 +44,11 @@ class Primitive_Executor(object):
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
 
+        rospy.sleep(.1)
         # drive to neutral position:
         self.imp_ctrl_active.publish(0)
         self.ctrl.set_neutral()
+        self.set_neutral_with_impedance()
         self.imp_ctrl_active.publish(1)
         rospy.sleep(1)
         pdb.set_trace()
@@ -95,7 +97,7 @@ class Primitive_Executor(object):
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
 
-            if (tr% 1) == 0 and tr!= 0:
+            if (tr% 30) == 0 and tr!= 0:
                 self.redistribute_objects()
 
             self.write_ckpt(tr, self.recorder.igrp)
