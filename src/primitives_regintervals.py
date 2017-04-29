@@ -44,12 +44,13 @@ class Primitive_Executor(object):
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
 
+        rospy.sleep(1)
         # drive to neutral position:
         self.imp_ctrl_active.publish(0)
         self.ctrl.set_neutral()
+        self.set_neutral_with_impedance()
         self.imp_ctrl_active.publish(1)
         rospy.sleep(1)
-        pdb.set_trace()
 
         limb = 'right'
         self.name_of_service = "ExternalTools/" + limb + "/PositionKinematicsNode/FKService"
@@ -78,6 +79,7 @@ class Primitive_Executor(object):
         else:
             start_tr = 0
 
+        accum_time = 0
         for tr in range(start_tr, self.num_traj):
 
             self.alive_publisher.publish('still alive!')
@@ -92,20 +94,32 @@ class Primitive_Executor(object):
                 except Traj_aborted_except:
                     self.recorder.delete_traj(tr)
 
+            if ((tr+1)% 30) == 0:
+                self.redistribute_objects()
+
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
+            accum_time += delta.total_seconds()
 
-            if (tr% 1) == 0 and tr!= 0:
-                self.redistribute_objects()
+            avg_nstep = 90
+            if ((tr+1)% avg_nstep) == 0:
+                average = accum_time/avg_nstep
+                self.write_timing_file(average)
+                accum_time = 0
 
             self.write_ckpt(tr, self.recorder.igrp)
 
-        # self.ctrl.set_neutral()
 
     def write_ckpt(self, tr, i_grp):
         with open(self.checkpoint_file, 'w') as f:
             f.write("last trajectory, current group%f \n")
             f.write("{} {} \n".format(tr, i_grp))
+
+    def write_timing_file(self, avg):
+        with open(os.path.join(self.recorder.save_dir, 'timingfile.txt'), 'w') as f:
+            f.write("average duration for trajectory (including amortization of redistribution trajectory): {} \n".format(avg))
+            f.write("expected number of trajectory per day: {} \n".format(24.*3600./avg))
+
 
     def parse_ckpt(self):
         with open(self.checkpoint_file, 'r') as f:
@@ -165,7 +179,7 @@ class Primitive_Executor(object):
 
         self.topen, self.t_down = 0, 0
 
-        duration = 10  # duration of trajectory in seconds
+        duration = 12 # duration of trajectory in seconds
 
         #move to start:
         self.move_to_startpos()
@@ -191,7 +205,7 @@ class Primitive_Executor(object):
             if i_act < len(tact):
                 if self.curr_delta_time > tact[i_act]:
                     print 'current position error', self.des_pos - self.get_endeffector_pos(pos_only=True)
-                    action_vec, des_joint_angles = self.act(i_act)  # after completing trajectory save final state
+                    action_vec, des_joint_angles = self.act_joint(i_act)  # after completing trajectory save final state
                     i_act += 1
 
             try:
@@ -245,12 +259,11 @@ class Primitive_Executor(object):
         js.position = [des_joint_angles[n] for n in js.name]
         self.imp_ctrl_publisher.publish(js)
 
-    def move_with_impedance_sec(self, cmd, tsec = 2):
+    def move_with_impedance_sec(self, cmd, tsec = 2.):
         """
         blocking
         """
         tstart = rospy.get_time()
-        self.imp_ctrl_release_spring(30.)
         delta_t = 0
         while delta_t < tsec:
             delta_t = rospy.get_time() - tstart
@@ -259,6 +272,7 @@ class Primitive_Executor(object):
     def set_neutral_with_impedance(self):
         neutral_jointangles = [0.412271, -0.434908, -1.198768, 1.795462, 1.160788, 1.107675, 2.068076]
         cmd = dict(zip(self.ctrl.limb.joint_names(), neutral_jointangles))
+        self.imp_ctrl_release_spring(50)
         self.move_with_impedance_sec(cmd)
 
     def move_to_startpos(self):
@@ -279,6 +293,7 @@ class Primitive_Executor(object):
         try:
             if self.robot_move:
                 if self.use_imp_ctrl:
+                    self.imp_ctrl_release_spring(30)
                     self.move_with_impedance_sec(des_joint_angles)
                 else:
                     self.ctrl.limb.move_to_joint_positions(des_joint_angles)
@@ -291,7 +306,78 @@ class Primitive_Executor(object):
             rospy.sleep(.5)
             raise Traj_aborted_except('raising Traj_aborted_except')
 
-    def act(self, i_act):
+
+    def act_joint(self, i_act):
+        """
+        only combined actions
+        :param i_act:
+        :return:
+        """
+
+        maxshift = .07
+        posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2), np.zeros(1)))
+        self.des_pos += posshift
+        self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
+
+
+        self.imp_ctrl_release_spring(120.)
+        close_cmd = np.random.choice(range(5), p=[0.8, 0.05, 0.05, 0.05, 0.05])
+        if close_cmd != 0:
+            self.topen = i_act + close_cmd
+            self.ctrl.gripper.close()
+            self.gripper_closed = True
+
+
+        up_cmd = np.random.choice(range(5), p=[0.9, 0.025, 0.025, 0.025, 0.025])
+        delta_up = .1
+        if up_cmd != 0:
+            self.t_down = i_act + up_cmd
+            self.des_pos[2] = self.lower_height + delta_up
+            self.gripper_up = True
+
+
+        if self.gripper_closed:
+            if i_act == self.topen:
+                self.ctrl.gripper.open()
+                print 'opening gripper'
+                self.gripper_closed = False
+
+        if self.gripper_up:
+            if i_act == self.t_down:
+                self.des_pos[2] = self.lower_height
+                print 'going down'
+                self.imp_ctrl_release_spring(30.)
+                self.gripper_up = False
+
+        action_vec = np.array([
+                               posshift[0],
+                               posshift[1],
+                               close_cmd,
+                               up_cmd
+                               ])
+        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
+                                                           self.des_pos[1],
+                                                           self.des_pos[2],
+                                                           inverse_kinematics.EXAMPLE_O)
+        start_joints = self.ctrl.limb.joint_angles()
+        try:
+            des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
+                                                      use_advanced_options=True)
+        except ValueError:
+            rospy.logerr('no inverse kinematics solution found, '
+                         'going to reset robot...')
+            current_joints = self.ctrl.limb.joint_angles()
+            self.ctrl.limb.set_joint_positions(current_joints)
+            raise Traj_aborted_except('raising Traj_aborted_except')
+
+        return action_vec, des_joint_angles
+
+    def act_distinct(self, i_act):
+        """
+        only perfom one action at a time
+        :param i_act:
+        :return:
+        """
 
         # sample action type:
         noptions = 3
@@ -411,8 +497,11 @@ class Primitive_Executor(object):
                     print 'going to waypoint ', i
 
                     if self.imp_ctrl_active:
-                        self.imp_ctrl_release_spring(90)
-                        self.move_with_impedance_sec(waypoint, tsec=1.5)
+                        if i < 4:
+                            self.imp_ctrl_release_spring(30)
+                        else:
+                            self.imp_ctrl_release_spring(65)
+                        self.move_with_impedance_sec(waypoint, tsec=1.0)
                     else:
                         self.ctrl.limb.move_to_joint_positions(waypoint, timeout=5.0)
                 except:
