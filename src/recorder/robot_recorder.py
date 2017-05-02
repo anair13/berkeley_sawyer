@@ -154,6 +154,7 @@ class RobotRecorder(object):
         self.ltob.d_img_cropped_8bit = img
 
 
+
     def store_latest_im(self, data):
 
         self.ltob.img_msg = data
@@ -276,15 +277,12 @@ class RobotRecorder(object):
     def get_aux_img(self):
         try:
             rospy.wait_for_service('get_kinectdata', 0.1)
-            resp1 = self.get_kinectdata_func(i_save)
+            resp1 = self.get_kinectdata_func()
             self.ltob_aux1.img_msg = resp1.image
-
-            #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
+            # self.ltob_aux1.img_cropped = self.bridge.imgmsg_to_cv2(resp1.image)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
-
-
 
     def _save_state_actions(self, i_save, action, endeff_pose):
         joints_right = self._limb_right.joint_names()

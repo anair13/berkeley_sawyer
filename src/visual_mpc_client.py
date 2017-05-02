@@ -165,8 +165,9 @@ class Visual_MPC_Client():
         try:
             rospy.wait_for_service('get_kinectdata', 10)
             pdb.set_trace()
+            self.recorder.get_aux_img()
             imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
-            imageaux1 = self.bridge.cv2_to_imgmsg(self.recorder.ltob_aux1.img_cropped)
+            imageaux1 = self.recorder.ltob_aux1.img_msg
             state = self.get_endeffector_pos()
             action_vec = self.get_action_func(imagemain, imageaux1, list(state))
 
