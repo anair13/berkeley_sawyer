@@ -182,9 +182,6 @@ class Visual_MPC_Client():
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
-
-        # print action_vec.action
-
         return action_vec
 
 
@@ -248,8 +245,8 @@ class Visual_MPC_Client():
 
         self.des_pos += action_vec[0:2]
         self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
-
         self.imp_ctrl_release_spring(120.)
+
         close_cmd = action_vec[2]
         if close_cmd != 0:
             self.topen = i_act + close_cmd
