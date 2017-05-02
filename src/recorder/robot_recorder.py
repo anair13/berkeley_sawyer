@@ -81,6 +81,7 @@ class RobotRecorder(object):
             rospy.loginfo("init node aux_recorder1")
 
             # initializing the server:
+            rospy.Service('save_kinectdata', save_kinectdata, self.save_kinect_handler)
             rospy.Service('get_kinectdata', get_kinectdata, self.get_kinect_handler)
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
             rospy.Service('delete_traj', delete_traj, self.delete_traj_handler)
@@ -100,9 +101,12 @@ class RobotRecorder(object):
             self.action_list, self.joint_angle_list, self.cart_pos_list = [], [], []
 
 
-    def get_kinect_handler(self, req):
+    def save_kinect_handler(self, req):
         self.t_savereq = rospy.get_time()
         self._save_img_local(req.itr)
+        return save_kinectdataResponse()
+
+    def get_kinect_handler(self, req):
         img = np.asarray(self.ltob.img_cropped)
         img = self.bridge.cv2_to_imgmsg(img)
         return get_kinectdataResponse(img)
@@ -134,16 +138,6 @@ class RobotRecorder(object):
         self.ltob.d_img_raw_npy = np.asarray(cv_image)
         img = cv2.resize(cv_image, (0, 0), fx=1 /5.5, fy=1 / 5.5, interpolation=cv2.INTER_AREA)
 
-        # print '----------------------'
-        # print 'image raw data:'
-        # print 'depth image shape', img.shape
-        # print 'max', np.max(img)
-        # print 'min', np.min(img)
-        # print '----------------------'
-
-        # percentile = np.percentile(num, 90)
-        # print '90-th percentile at', percentile
-        # ## fixing this at 1400
         img = np.clip(img,0, 1400)
 
         startcol = 7
@@ -159,12 +153,6 @@ class RobotRecorder(object):
         img = np.squeeze(img)
         self.ltob.d_img_cropped_8bit = img
 
-        # Image.fromarray(img).show()
-        # pdb.set_trace()
-
-        # rospy.loginfo("time to save depth-image: {}".format(
-        #     rospy.get_time() - self.ltob.tstamp_d_img
-        # ))
 
     def store_latest_im(self, data):
 
@@ -174,10 +162,6 @@ class RobotRecorder(object):
 
         self.ltob.img_cv2 =  cv_image
         self.ltob.img_cropped = self.crop_colorimg(cv_image)
-
-        # rospy.loginfo("time to save image: {}".format(
-        #     rospy.get_time() - self.ltob.tstamp_img
-        # ))
 
 
     def crop_colorimg(self, cv_image):
@@ -197,10 +181,6 @@ class RobotRecorder(object):
 
         # crop image:
         img = img[startrow:endrow, startcol:endcol]
-
-        # cv2.imshow('img', img)
-        # print 'cropped'
-        # pdb.set_trace()
         return img
 
 
@@ -280,13 +260,9 @@ class RobotRecorder(object):
 
         # request save at auxiliary recorders
         try:
-            # t1 = rospy.get_time()
             rospy.wait_for_service('get_kinectdata', 0.1)
-            #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
-            # t2 = rospy.get_time()
             resp1 = self.get_kinectdata_func(i_save)
-
-            self.ltob_aux1.img_cropped = resp1.image
+            self.ltob_aux1.img_msg = resp1.image
 
             #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
         except (rospy.ServiceException, rospy.ROSException), e:
@@ -297,11 +273,18 @@ class RobotRecorder(object):
         self._save_img_local(i_save)
         self._save_state_actions(i_save, action, endeffector_pose)
 
-        # timing:
-        #rospy.loginfo("complete time to save locally {}".format(rospy.get_time() - t_beforesave))
-        # d_times = [delta_req_store_dimage, delta_req_store_image, complete_time_save]
-        # if not (d_times < 0.4).all():
-        #     raise ValueError("images could not be captured in time!")
+    def get_aux_img(self):
+        try:
+            rospy.wait_for_service('get_kinectdata', 0.1)
+            resp1 = self.get_kinectdata_func(i_save)
+            self.ltob_aux1.img_msg = resp1.image
+
+            #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
+        except (rospy.ServiceException, rospy.ROSException), e:
+            rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('get_kinectdata service failed')
+
+
 
     def _save_state_actions(self, i_save, action, endeff_pose):
         joints_right = self._limb_right.joint_names()

@@ -152,6 +152,7 @@ class Visual_MPC_Client():
 
         i_save = 0  # index of current saved step
         for i_act in range(self.action_sequence_length):
+            # get images from all cameras:
 
             action_vec = self.query_action()
             self.apply_act(action_vec, i_act)
@@ -160,13 +161,12 @@ class Visual_MPC_Client():
                 self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
                 i_save += 1
 
-
     def query_action(self):
         try:
             rospy.wait_for_service('get_kinectdata', 10)
             pdb.set_trace()
             imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
-            imageaux1 = self.recorder.ltob_aux1.img_cropped(self.recorder.ltob_aux1.img_cropped)
+            imageaux1 = self.bridge.cv2_to_imgmsg(self.recorder.ltob_aux1.img_cropped)
             state = self.get_endeffector_pos()
             action_vec = self.get_action_func(imagemain, imageaux1, list(state))
 
