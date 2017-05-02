@@ -167,16 +167,14 @@ class RobotRecorder(object):
 
     def crop_colorimg(self, cv_image):
         self.ltob.d_img_raw_npy = np.asarray(cv_image)
-
         if self.instance_type == 'main':
             img = cv2.resize(cv_image, (0, 0), fx=1 / 15., fy=1 / 15., interpolation=cv2.INTER_AREA)
-            startcol = 27
             startrow = 2
+            startcol = 27
         else:
             img = cv2.resize(cv_image, (0, 0), fx=1 / 16., fy=1 / 16., interpolation=cv2.INTER_AREA)
-            startcol = 27
             startrow = 3
-
+            startcol = 27
         endcol = startcol + 64
         endrow = startrow + 64
 
@@ -189,7 +187,6 @@ class RobotRecorder(object):
     def init_traj(self, itr):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
-
         try:
             rospy.wait_for_service('init_traj', timeout=0.1)
             resp1 = self.init_traj_func(itr, self.igrp)
@@ -201,7 +198,6 @@ class RobotRecorder(object):
 
         if ((itr+1) % self.ngroup) == 0:
             self.igrp += 1
-
 
     def _init_traj_local(self, itr):
         """
@@ -278,8 +274,6 @@ class RobotRecorder(object):
             rospy.wait_for_service('get_kinectdata', 0.1)
             resp1 = self.get_kinectdata_func()
             self.ltob_aux1.img_msg = resp1.image
-            pdb.set_trace()
-            # self.ltob_aux1.img_cropped = self.bridge.imgmsg_to_cv2(resp1.image)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
@@ -324,7 +318,6 @@ class RobotRecorder(object):
         # saving the full resolution image
         if self.ltob.img_cv2 is not None:
             image_name =  self.image_folder+ "/" + pref + "_full_cropped_im{0}_time{1}.jpg".format(i_tr, self.ltob.tstamp_img)
-
             startcol = 180
             startrow = 0
             endcol = startcol + 1500
@@ -358,18 +351,6 @@ class RobotRecorder(object):
             cv2.imwrite(image_name, self.ltob.d_img_cropped_8bit, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT, 1])
         else:
             raise ValueError('d_img_cropped_8bit no data received')
-
-        # rospy.loginfo("time of request {}".format(self.t_savereq))
-        # delta_req_store_dimage = self.t_savereq - self.ltob.tstamp_d_img
-        # rospy.loginfo("time between last stored depthimage and save request: {}"
-        #               .format(delta_req_store_dimage))
-        # delta_req_store_image = self.t_savereq - self.ltob.tstamp_img
-        # rospy.loginfo("time between last stored image and save request: {}"
-        #               .format(delta_req_store_image))
-        # complete_time_save = rospy.get_time() - self.t_savereq
-        # rospy.loginfo("complete time for saving: {}"
-        #               .format(complete_time_save))
-
 
 if __name__ ==  '__main__':
     print 'started'

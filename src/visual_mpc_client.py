@@ -172,17 +172,18 @@ class Visual_MPC_Client():
                 i_save += 1
 
     def query_action(self):
+        self.recorder.get_aux_img()
+        imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
+        imageaux1 = self.recorder.ltob_aux1.img_msg
+        state = self.get_endeffector_pos()
         try:
-            rospy.wait_for_service('get_kinectdata', 10)
-            self.recorder.get_aux_img()
-            imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
-            imageaux1 = self.recorder.ltob_aux1.img_msg
-            state = self.get_endeffector_pos()
-            pdb.set_trace()
-            action_vec = self.get_action_func(imagemain, imageaux1, list(state))
-
+            rospy.wait_for_service('get_action', timeout=0.1)
+            action_vec = self.get_action_func(imagemain, imageaux1, tuple(state))
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('get_kinectdata service failed')
+
+        # print action_vec.action
 
         return action_vec
 
