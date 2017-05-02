@@ -45,21 +45,24 @@ class Visual_MPC_Client():
         self.action_sequence_length = 25 # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/testrecording",
+        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/visual_mpc",
                                                      start_loop=False,
                                                      seq_len = self.action_sequence_length)
         # drive to neutral position:
         ################# self.ctrl.set_neutral()
         self.get_action_func = rospy.ServiceProxy('get_action', get_action)
+        self.init_traj_visual_func = rospy.ServiceProxy('init_traj_visualmpc', init_traj_visualmpc)
         self.robot_move = True
 
         self.imp_ctrl_publisher = rospy.Publisher('desired_joint_pos', JointState, queue_size=1)
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
+        self.name_of_service = "ExternalTools/right/PositionKinematicsNode/FKService"
+        self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
 
         self.use_imp_ctrl = True
         self.robot_move = False
-        self.save_active = True
+        self.save_active = False
 
         self.bridge = CvBridge()
 
@@ -133,12 +136,19 @@ class Visual_MPC_Client():
                          resp.pose_stamp[0].pose.position.z])
         return pos
 
-
+    def init_traj(self, itr):
+        try:
+            rospy.wait_for_service('init_traj', timeout=0.1)
+            resp1 = self.init_traj_visual_func(itr, 0)
+        except (rospy.ServiceException, rospy.ROSException), e:
+            rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('get_kinectdata service failed')
 
     def run_trajectory(self, i_tr):
 
         self.ctrl.set_neutral(speed= 0.3)
         self.ctrl.gripper.open()
+        self.init_traj(i_tr)
 
         self.gripper_closed = False
         self.gripper_up = False
@@ -163,25 +173,24 @@ class Visual_MPC_Client():
         i_save = 0  # index of current saved step
         for i_act in range(self.action_sequence_length):
 
-
             action_vec = self.query_action()
             self.apply_act(action_vec, i_act)
 
-            self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
-            i_save += 1
-
+            if self.save_active:
+                self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
+                i_save += 1
 
     def query_action(self):
+        self.recorder.get_aux_img()
+        imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
+        imageaux1 = self.recorder.ltob_aux1.img_msg
+        state = self.get_endeffector_pos()
         try:
-            rospy.wait_for_service('get_kinectdata', 10)
-            imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
-            imageaux1 = self.recorder.ltob_aux1.img_cropped
-            state = self.get_endeffector_pos()
-            action_vec = self.get_action_func(imagemain, imageaux1, state)
-
+            rospy.wait_for_service('get_action', timeout=0.1)
+            action_vec = self.get_action_func(imagemain, imageaux1, tuple(state))
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
-
+            raise ValueError('get_kinectdata service failed')
         return action_vec
 
 
@@ -245,8 +254,8 @@ class Visual_MPC_Client():
 
         self.des_pos += action_vec[0:2]
         self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
-
         self.imp_ctrl_release_spring(120.)
+
         close_cmd = action_vec[2]
         if close_cmd != 0:
             self.topen = i_act + close_cmd
