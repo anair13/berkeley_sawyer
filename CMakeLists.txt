@@ -55,6 +55,7 @@ find_package(catkin REQUIRED COMPONENTS
  add_service_files(
    FILES
    get_kinectdata.srv
+   save_kinectdata.srv
    init_traj.srv
    delete_traj.srv
    get_action.srv
