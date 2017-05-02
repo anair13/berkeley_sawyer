@@ -9,15 +9,15 @@ from intera_core_msgs.srv import (
 )
 from sensor_msgs.msg import JointState
 
-import inverse_kinematics
-import robot_controller
-from recorder import robot_recorder
+import src.inverse_kinematics
+import src.robot_controller
+from src.recorder import robot_recorder
 
 
 class RandomPusher(object):
     def __init__(self):
         """Test inverse kinematics positions"""
-        self.ctrl = robot_controller.RobotController()
+        self.ctrl = src.robot_controller.RobotController()
         self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/test_recording", start_loop=False)
 
         # drive to neutral position:
@@ -123,13 +123,13 @@ class RandomPusher(object):
         for itr, curr_waypt in enumerate(goalpoints):
 
             start_joints = self.ctrl.limb.joint_angles()
-            desired_pose = inverse_kinematics.get_pose_stamped(curr_waypt[0],
-                                                               curr_waypt[1],
-                                                               curr_waypt[2],
-                                                               inverse_kinematics.EXAMPLE_O)
+            desired_pose = src.inverse_kinematics.get_pose_stamped(curr_waypt[0],
+                                                                   curr_waypt[1],
+                                                                   curr_waypt[2],
+                                                                   src.inverse_kinematics.EXAMPLE_O)
             try:
-                cmd = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
-                                                          use_advanced_options=True)
+                cmd = src.inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
+                                                              use_advanced_options=True)
             except ValueError:
                 rospy.logerr('no inverser kinematics solution found, going to reset robot...')
                 current_joints = self.ctrl.limb.joint_angles()
@@ -215,9 +215,9 @@ class RandomPusher(object):
             newpos = self.interpolate(prev_goalpoint, next_goalpoint, tprev, tnext)
 
             start_joints = self.ctrl.limb.joint_angles()
-            desired_pose = inverse_kinematics.get_pose_stamped(newpos[0], newpos[1], newpos[2], inverse_kinematics.EXAMPLE_O)
+            desired_pose = src.inverse_kinematics.get_pose_stamped(newpos[0], newpos[1], newpos[2], src.inverse_kinematics.EXAMPLE_O)
             try:
-                cmd = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints, use_advanced_options=True)
+                cmd = src.inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints, use_advanced_options=True)
             except ValueError:
                 print 'stopping trajectory, going to reset robot...'
                 current_joints = self.ctrl.limb.joint_angles()

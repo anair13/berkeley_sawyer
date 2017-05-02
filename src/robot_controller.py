@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 
 import argparse
-
 import rospy
 
-import intera_interface
-import intera_external_devices
-
-from intera_interface import CHECK_VERSION
+import socket
+if socket.gethostname() == 'kullback':
+    import intera_interface
+    import intera_external_devices
+    from intera_interface import CHECK_VERSION
 
 import numpy as np
+import socket
 
 class RobotController(object):
 
@@ -19,12 +20,13 @@ class RobotController(object):
         print("Initializing node... ")
         rospy.init_node("sawyer_custom_controller")
         rospy.on_shutdown(self.clean_shutdown)
+
         rs = intera_interface.RobotEnable(CHECK_VERSION)
         init_state = rs.state().enabled
         print("Robot enabled...")
 
         self.limb = intera_interface.Limb("right")
-    
+
         try:
             self.gripper = intera_interface.Gripper("right")
         except:

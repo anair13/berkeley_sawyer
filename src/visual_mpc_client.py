@@ -3,19 +3,30 @@ import numpy as np
 from datetime import datetime
 import pdb
 import rospy
-from intera_core_msgs.srv import (
-    SolvePositionFK,
-    SolvePositionFKRequest,
-)
+
+import socket
+if socket.gethostname() == 'kullback':
+    from intera_core_msgs.srv import (
+        SolvePositionFK,
+        SolvePositionFKRequest,
+    )
+
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
+
+import cv2
+from cv_bridge import CvBridge, CvBridgeError
 
 import inverse_kinematics
 import robot_controller
 from recorder import robot_recorder
 import os
 import cPickle
-from primitives_regintervals import Primitive_Executor
+from std_msgs.msg import Float32
+from std_msgs.msg import Int64
+
+from berkeley_sawyer.srv import *
+
 
 class Traj_aborted_except(Exception):
     pass
@@ -32,18 +43,31 @@ class Visual_MPC_Client():
                                                      start_loop=False,
                                                      seq_len = self.action_sequence_length)
         # drive to neutral position:
-        self.ctrl.set_neutral()
+        ################# self.ctrl.set_neutral()
         self.get_action_func = rospy.ServiceProxy('get_action', get_action)
         self.robot_move = True
 
+        self.imp_ctrl_publisher = rospy.Publisher('desired_joint_pos', JointState, queue_size=1)
+        self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
+        self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
+
         # start!
-        self.image0, self.image1 = None, None
+        self.images = None
+
+        self.use_imp_ctrl = True
+        self.robot_move = False
+        self.save_active = True
+
+        self.bridge = CvBridge()
+
         self.run_visual_mpc()
 
 
     def collect_goal_image(self):
         goalimage_folder = os.path.dirname(os.path.realpath(__file__)) + '/goalimages'
 
+    def imp_ctrl_release_spring(self, maxstiff):
+        self.imp_ctrl_release_spring_pub.publish(maxstiff)
 
 
     def run_visual_mpc(self):
@@ -69,7 +93,6 @@ class Visual_MPC_Client():
 
             if (tr% 30) == 0 and tr!= 0:
                 self.redistribute_objects()
-
 
         self.ctrl.set_neutral()
 
@@ -105,6 +128,7 @@ class Visual_MPC_Client():
 
         self.ctrl.set_neutral(speed= 0.3)
         self.ctrl.gripper.open()
+
         self.gripper_closed = False
         self.gripper_up = False
         self.recorder.init_traj(i_tr)
@@ -124,42 +148,56 @@ class Visual_MPC_Client():
         self.move_to_startpos()
 
         i_save = 0  # index of current saved step
-
-        self.ctrl.limb.set_joint_position_speed(.20)
-
-
         for i_act in range(self.action_sequence_length):
 
-            self.image1 = self.recorder.ltob.d_img_cropped_8bit
-            self.state1 = self.get_endeffector_pos()
-
-            if i_act == 0:
-                self.image0 = self.image1
-                self.state0 = self.state1
-                continue
+            self.images = np.concatenate((self.recorder.ltob.img_cropped,
+                                          self.recorder.ltob_aux1.img_cropped), axis=2)
 
             action_vec = self.query_action()
             self.apply_act(action_vec, i_act)
 
-            self.image0 = self.image1
-            self.state0 = self.state1
-
             self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
             i_save += 1
-
-        #saving the final state:
-        self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
 
 
     def query_action(self):
         try:
             rospy.wait_for_service('get_kinectdata', 10)
-            action_vec = self.get_action_func(self.image0, self.image1, self.state0, self.state1)
+            imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
+            imageaux1 = self.recorder.ltob_aux1.img_cropped
+            state = self.get_endeffector_pos()
+            action_vec = self.get_action_func(imagemain, imageaux1, state)
+
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
 
         return action_vec
 
+
+    def move_with_impedance(self, des_joint_angles):
+        """
+        non-blocking
+        """
+        js = JointState()
+        js.name = self.ctrl.limb.joint_names()
+        js.position = [des_joint_angles[n] for n in js.name]
+        self.imp_ctrl_publisher.publish(js)
+
+    def move_with_impedance_sec(self, cmd, tsec = 2.):
+        """
+        blocking
+        """
+        tstart = rospy.get_time()
+        delta_t = 0
+        while delta_t < tsec:
+            delta_t = rospy.get_time() - tstart
+            self.move_with_impedance(cmd)
+
+    def set_neutral_with_impedance(self):
+        neutral_jointangles = [0.412271, -0.434908, -1.198768, 1.795462, 1.160788, 1.107675, 2.068076]
+        cmd = dict(zip(self.ctrl.limb.joint_names(), neutral_jointangles))
+        self.imp_ctrl_release_spring(50)
+        self.move_with_impedance_sec(cmd)
 
     def move_to_startpos(self):
         desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
@@ -178,7 +216,11 @@ class Visual_MPC_Client():
             raise Traj_aborted_except('raising Traj_aborted_except')
         try:
             if self.robot_move:
-                self.ctrl.limb.move_to_joint_positions(des_joint_angles)
+                if self.use_imp_ctrl:
+                    self.imp_ctrl_release_spring(30)
+                    self.move_with_impedance_sec(des_joint_angles)
+                else:
+                    self.ctrl.limb.move_to_joint_positions(des_joint_angles)
         except OSError:
             rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
             rospy.sleep(.5)
@@ -190,33 +232,22 @@ class Visual_MPC_Client():
 
     def apply_act(self, action_vec, i_act):
 
-        print 'action: ', i_act
-        if action_vec[0] != 0 or action_vec[1] != 0:
-            posshift = action_vec[0:2]
-            self.des_pos += posshift
-            self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
-            print 'move to ', self.des_pos
-        else:
-            posshift = np.zeros(2)
+        self.des_pos += action_vec[0:2]
+        self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
 
-        if action_vec[2] != 0:  # close gripper and hold for n steps
-            close_cmd = action_vec[2]
-            print 'close and hold for ', close_cmd
+        self.imp_ctrl_release_spring(120.)
+        close_cmd = action_vec[2]
+        if close_cmd != 0:
             self.topen = i_act + close_cmd
             self.ctrl.gripper.close()
             self.gripper_closed = True
-        else:
-            close_cmd = 0
 
-        if action_vec[3] != 0:  # go up for n steps
-            up_cmd = action_vec[3]
+        up_cmd = action_vec[3]
+        delta_up = .1
+        if up_cmd != 0:
             self.t_down = i_act + up_cmd
-            delta_up = .1
             self.des_pos[2] = self.lower_height + delta_up
             self.gripper_up = True
-            print 'stay up for ', up_cmd
-        else:
-            up_cmd = 0
 
         if self.gripper_closed:
             if i_act == self.topen:
@@ -228,6 +259,7 @@ class Visual_MPC_Client():
             if i_act == self.t_down:
                 self.des_pos[2] = self.lower_height
                 print 'going down'
+                self.imp_ctrl_release_spring(30.)
                 self.gripper_up = False
 
         desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
@@ -304,9 +336,7 @@ class Visual_MPC_Client():
                     do_repeat = True
                     break
 
-def main():
-    mpc = Visual_MPC_Client()
 
 
 if __name__ == '__main__':
-    main()
+    mpc = Visual_MPC_Client()

@@ -39,7 +39,7 @@ class Primitive_Executor(object):
 
         self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
 
-        self.use_imp_ctrl = True
+
         self.imp_ctrl_publisher = rospy.Publisher('desired_joint_pos', JointState, queue_size=1)
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
@@ -57,6 +57,8 @@ class Primitive_Executor(object):
         self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
 
         self.topen, self.t_down = None, None
+
+        self.use_imp_ctrl = True
         self.robot_move = True
         self.save_active = True
         self.checkpoint_file = os.path.join(self.recorder.save_dir, 'checkpoint.txt')
