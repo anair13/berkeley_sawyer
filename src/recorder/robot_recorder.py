@@ -174,10 +174,9 @@ class RobotRecorder(object):
             startrow = 2
         else:
             img = cv2.resize(cv_image, (0, 0), fx=1 / 16., fy=1 / 16., interpolation=cv2.INTER_AREA)
-            startcol = 25
-            startrow = 5
+            startcol = 27
+            startrow = 3
 
-        pdb.set_trace()
         endcol = startcol + 64
         endrow = startrow + 64
 
