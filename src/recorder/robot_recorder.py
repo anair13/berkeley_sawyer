@@ -208,8 +208,6 @@ class RobotRecorder(object):
         :param itr: number of current trajecotry
         :return:
         """
-
-
         self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
 
         rospy.loginfo("Init trajectory {} in group {}".format(itr, self.igrp))

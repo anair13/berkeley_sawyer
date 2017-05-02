@@ -45,6 +45,7 @@ class Visual_MPC_Client():
         # drive to neutral position:
         ################# self.ctrl.set_neutral()
         self.get_action_func = rospy.ServiceProxy('get_action', get_action)
+        self.init_traj_visual_func = rospy.ServiceProxy('init_traj_visualmpc', init_traj_visualmpc)
         self.robot_move = True
 
         self.imp_ctrl_publisher = rospy.Publisher('desired_joint_pos', JointState, queue_size=1)
@@ -127,14 +128,23 @@ class Visual_MPC_Client():
                          resp.pose_stamp[0].pose.position.z])
         return pos
 
+    def init_traj(self, itr):
+        try:
+            rospy.wait_for_service('init_traj', timeout=0.1)
+            resp1 = self.init_traj_visual_func(itr, 0)
+        except (rospy.ServiceException, rospy.ROSException), e:
+            rospy.logerr("Service call failed: %s" % (e,))
+            raise ValueError('get_kinectdata service failed')
+
     def run_trajectory(self, i_tr):
 
         self.ctrl.set_neutral(speed= 0.3)
         self.ctrl.gripper.open()
+        self.init_traj(i_tr)
 
         self.gripper_closed = False
         self.gripper_up = False
-        self.recorder.init_traj(i_tr)
+
 
         self.lower_height = 0.21
         self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
