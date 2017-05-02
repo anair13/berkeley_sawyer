@@ -104,9 +104,8 @@ class RobotRecorder(object):
         self.t_savereq = rospy.get_time()
         self._save_img_local(req.itr)
         img = np.asarray(self.ltob.img_cropped)
-        # return get_kinectdataResponse(numpy_msg(img))
-        # TODO: put in response
-        return get_kinectdataResponse()
+        img = self.bridge.cv2_to_imgmsg(img)
+        return get_kinectdataResponse(img)
 
     def init_traj_handler(self, req):
         self.igrp = req.igrp
@@ -286,6 +285,7 @@ class RobotRecorder(object):
             #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
             # t2 = rospy.get_time()
             resp1 = self.get_kinectdata_func(i_save)
+
             self.ltob_aux1.img_cropped = resp1.image
 
             #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
