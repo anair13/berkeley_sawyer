@@ -48,19 +48,21 @@ class RobotRecorder(object):
         self.overwrite = True
 
         rospy.loginfo('hostname is :{}'.format(socket.gethostname()))
-        if socket.gethostname() != 'kullback':
+        if socket.gethostname() == 'kullback':
             # if node is not running on kullback it is an auxiliary recorder
-            self.instance_type = 'aux1'
-        else:
-            # instance running on kullback is called main;
-            # them main instance one also records actions and joint angles
             self.instance_type = 'main'
-
-        if self.instance_type =='main': #if it is running on kullback
             self._gripper = None
             self.gripper_name = '_'.join([side, 'gripper'])
             import intera_interface
             self._limb_right = intera_interface.Limb(side)
+        elif socket.gethostname() == 'kinectbox1':
+            # instance running on kullback is called main;
+            # them main instance one also records actions and joint angles
+            self.instance_type = 'aux1'
+        else:
+            self.instance_type = 'main'
+
+        print 'init recorder with instance type', self.instance_type
 
         prefix = self.instance_type
 
@@ -72,12 +74,11 @@ class RobotRecorder(object):
         self.ltob_aux1 = Latest_observation()
 
         self.bridge = CvBridge()
-
         self.ngroup = 1000
         self.igrp = 0
 
         # if it is an auxiliary node advertise services
-        if self.instance_type != 'main':
+        if socket.gethostname() == 'kinectbox1':
             rospy.init_node('aux_recorder1')
             rospy.loginfo("init node aux_recorder1")
 
@@ -87,7 +88,7 @@ class RobotRecorder(object):
             rospy.Service('delete_traj', delete_traj, self.delete_traj_handler)
 
             rospy.spin()
-        else:
+        elif socket.gethostname() == 'kullback':
             # initializing the client:
             self.get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
             self.init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
@@ -106,6 +107,7 @@ class RobotRecorder(object):
         self._save_img_local(req.itr)
         img = np.asarray(self.ltob.img_cropped)
         # return get_kinectdataResponse(numpy_msg(img))
+        # TODO: put in response
         return get_kinectdataResponse()
 
     def init_traj_handler(self, req):
@@ -286,7 +288,7 @@ class RobotRecorder(object):
             #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
             # t2 = rospy.get_time()
             resp1 = self.get_kinectdata_func(i_save)
-            self.ltob_aux1.img_cropped = resp1.image
+            selfltob_aux1.img_cropped = resp1.image
 
             #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
         except (rospy.ServiceException, rospy.ROSException), e:
