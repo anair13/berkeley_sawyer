@@ -39,7 +39,7 @@ class Visual_MPC_Client():
         self.action_sequence_length = 25 # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/testrecording",
+        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/visual_mpc",
                                                      start_loop=False,
                                                      seq_len = self.action_sequence_length)
         # drive to neutral position:
@@ -50,16 +50,19 @@ class Visual_MPC_Client():
         self.imp_ctrl_publisher = rospy.Publisher('desired_joint_pos', JointState, queue_size=1)
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
+        self.name_of_service = "ExternalTools/right/PositionKinematicsNode/FKService"
+        self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
 
         # start!
         self.images = None
 
         self.use_imp_ctrl = True
         self.robot_move = False
-        self.save_active = True
+        self.save_active = False
 
         self.bridge = CvBridge()
 
+        rospy.sleep(1)
         self.run_visual_mpc()
 
 
@@ -150,14 +153,12 @@ class Visual_MPC_Client():
         i_save = 0  # index of current saved step
         for i_act in range(self.action_sequence_length):
 
-            self.images = np.concatenate((self.recorder.ltob.img_cropped,
-                                          self.recorder.ltob_aux1.img_cropped), axis=2)
-
             action_vec = self.query_action()
             self.apply_act(action_vec, i_act)
 
-            self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
-            i_save += 1
+            if self.save_active:
+                self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
+                i_save += 1
 
 
     def query_action(self):
@@ -166,7 +167,7 @@ class Visual_MPC_Client():
             imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
             imageaux1 = self.recorder.ltob_aux1.img_cropped
             state = self.get_endeffector_pos()
-            action_vec = self.get_action_func(imagemain, imageaux1, state)
+            action_vec = self.get_action_func(imagemain, imageaux1, list(state))
 
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))

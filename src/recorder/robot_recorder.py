@@ -59,8 +59,6 @@ class RobotRecorder(object):
             # instance running on kullback is called main;
             # them main instance one also records actions and joint angles
             self.instance_type = 'aux1'
-        else:
-            self.instance_type = 'main'
 
         print 'init recorder with instance type', self.instance_type
 
@@ -288,7 +286,7 @@ class RobotRecorder(object):
             #rospy.loginfo("t waiting for service {}".format(rospy.get_time() - t1))
             # t2 = rospy.get_time()
             resp1 = self.get_kinectdata_func(i_save)
-            selfltob_aux1.img_cropped = resp1.image
+            self.ltob_aux1.img_cropped = resp1.image
 
             #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
         except (rospy.ServiceException, rospy.ROSException), e:
