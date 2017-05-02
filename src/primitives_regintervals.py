@@ -242,10 +242,28 @@ class Primitive_Executor(object):
         if i_save != (self.state_sequence_length -1):
             raise Traj_aborted_except('trajectory not complete!')
 
-        # stact = cPickle.load(open(self.recorder.state_action_pkl_file, 'r'))
-        # print stact['jointangles']
-        # print stact['actions']
-        # print stact['endeffector_pos']
+        self.goup()
+
+    def goup(self):
+        print "going up at the end.."
+        delta_up = .1
+        self.des_pos[2] = self.lower_height + delta_up
+        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
+                                                           self.des_pos[1],
+                                                           self.des_pos[2],
+                                                           inverse_kinematics.EXAMPLE_O)
+        start_joints = self.ctrl.limb.joint_angles()
+        try:
+            des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
+                                                                   use_advanced_options=True)
+        except ValueError:
+            rospy.logerr('no inverse kinematics solution found, '
+                         'going to reset robot...')
+            current_joints = self.ctrl.limb.joint_angles()
+            self.ctrl.limb.set_joint_positions(current_joints)
+            raise Traj_aborted_except('raising Traj_aborted_except')
+        self.imp_ctrl_release_spring(150)
+        self.move_with_impedance_sec(des_joint_angles, tsec=.5)
 
     def imp_ctrl_release_spring(self, maxstiff):
         self.imp_ctrl_release_spring_pub.publish(maxstiff)
@@ -259,7 +277,7 @@ class Primitive_Executor(object):
         js.position = [des_joint_angles[n] for n in js.name]
         self.imp_ctrl_publisher.publish(js)
 
-    def move_with_impedance_sec(self, cmd, tsec = 2.):
+    def move_with_impedance_sec(self, cmd, tsec = 1.5):
         """
         blocking
         """
@@ -272,7 +290,7 @@ class Primitive_Executor(object):
     def set_neutral_with_impedance(self):
         neutral_jointangles = [0.412271, -0.434908, -1.198768, 1.795462, 1.160788, 1.107675, 2.068076]
         cmd = dict(zip(self.ctrl.limb.joint_names(), neutral_jointangles))
-        self.imp_ctrl_release_spring(50)
+        self.imp_ctrl_release_spring(60)
         self.move_with_impedance_sec(cmd)
 
     def move_to_startpos(self):
