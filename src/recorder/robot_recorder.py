@@ -174,14 +174,16 @@ class RobotRecorder(object):
             startrow = 2
         else:
             img = cv2.resize(cv_image, (0, 0), fx=1 / 16., fy=1 / 16., interpolation=cv2.INTER_AREA)
-            startcol = 27
+            startcol = 26
             startrow = 5
 
+        pdb.set_trace()
         endcol = startcol + 64
         endrow = startrow + 64
 
         # crop image:
         img = img[startrow:endrow, startcol:endcol]
+        assert img.shape == (64,64,3)
         return img
 
 
@@ -279,6 +281,7 @@ class RobotRecorder(object):
             rospy.wait_for_service('get_kinectdata', 0.1)
             resp1 = self.get_kinectdata_func()
             self.ltob_aux1.img_msg = resp1.image
+            pdb.set_trace()
             # self.ltob_aux1.img_cropped = self.bridge.imgmsg_to_cv2(resp1.image)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
