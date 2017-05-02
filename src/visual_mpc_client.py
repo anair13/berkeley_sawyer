@@ -11,6 +11,7 @@ if socket.gethostname() == 'kullback':
         SolvePositionFKRequest,
     )
 
+import argparse
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
@@ -33,7 +34,12 @@ class Traj_aborted_except(Exception):
 
 class Visual_MPC_Client():
     def __init__(self):
-        self.num_traj = 50000
+
+        parser = argparse.ArgumentParser(description='Run benchmarks')
+        parser.add_argument('collect_goalimage', default='False', type=str, help='whether to collect goalimages')
+        args = parser.parse_args()
+
+        self.num_traj = 50
 
         # must be an uneven number
         self.action_sequence_length = 25 # number of snapshots that are taken
@@ -51,20 +57,23 @@ class Visual_MPC_Client():
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
 
-        # start!
-        self.images = None
-
         self.use_imp_ctrl = True
         self.robot_move = False
         self.save_active = True
 
         self.bridge = CvBridge()
 
-        self.run_visual_mpc()
+        if args.collect_goalimage == 'True':
+            self.collect_goal_image()
+        else:
+            self.run_visual_mpc()
 
 
     def collect_goal_image(self):
         goalimage_folder = os.path.dirname(os.path.realpath(__file__)) + '/goalimages'
+
+    def load_goalimage(self, i_tr):
+
 
     def imp_ctrl_release_spring(self, maxstiff):
         self.imp_ctrl_release_spring_pub.publish(maxstiff)
@@ -124,6 +133,8 @@ class Visual_MPC_Client():
                          resp.pose_stamp[0].pose.position.z])
         return pos
 
+
+
     def run_trajectory(self, i_tr):
 
         self.ctrl.set_neutral(speed= 0.3)
@@ -131,6 +142,8 @@ class Visual_MPC_Client():
 
         self.gripper_closed = False
         self.gripper_up = False
+
+        self.load_goalimage(i_tr)
         self.recorder.init_traj(i_tr)
 
         self.lower_height = 0.21
@@ -150,8 +163,6 @@ class Visual_MPC_Client():
         i_save = 0  # index of current saved step
         for i_act in range(self.action_sequence_length):
 
-            self.images = np.concatenate((self.recorder.ltob.img_cropped,
-                                          self.recorder.ltob_aux1.img_cropped), axis=2)
 
             action_vec = self.query_action()
             self.apply_act(action_vec, i_act)
