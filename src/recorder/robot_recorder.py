@@ -154,7 +154,6 @@ class RobotRecorder(object):
         self.ltob.d_img_cropped_8bit = img
 
 
-
     def store_latest_im(self, data):
 
         self.ltob.img_msg = data

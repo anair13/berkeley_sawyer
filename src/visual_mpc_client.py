@@ -10,6 +10,7 @@ if socket.gethostname() == 'kullback':
         SolvePositionFK,
         SolvePositionFKRequest,
     )
+    import intera_external_devices
 
 import argparse
 from sensor_msgs.msg import JointState
@@ -45,7 +46,8 @@ class Visual_MPC_Client():
         self.action_sequence_length = 25 # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/visual_mpc",
+        self.base_dir ="/home/guser/sawyer_data/visual_mpc"
+        self.recorder = robot_recorder.RobotRecorder(save_dir=self.base_dir,
                                                      start_loop=False,
                                                      seq_len = self.action_sequence_length)
         # drive to neutral position:
@@ -73,14 +75,51 @@ class Visual_MPC_Client():
 
 
     def collect_goal_image(self):
-        goalimage_folder = os.path.dirname(os.path.realpath(__file__)) + '/goalimages'
 
-    def load_goalimage(self, i_tr):
+        # check if there is a checkpoint from which to resume
+        start_tr = 0
+        self.ctrl.set_neutral()
+        savedir = self.base_dir + '/goalimage'
 
+        for ind in range(start_tr, 10):
+
+            done = False
+            print("Controlling joints. Press ? for help, Esc to quit.")
+            while not done and not rospy.is_shutdown():
+                c = intera_external_devices.getch()
+                if c:
+                    # catch Esc or ctrl-c
+                    if c in ['\x1b', '\x03']:
+                        done = True
+                        rospy.signal_shutdown("Example finished.")
+                    if c == 'g':
+                        print 'taking goalimage'
+
+
+                        imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
+                        self.recorder.get_aux_img()
+                        imageaux1 = self.recorder.ltob_aux1.img_msg
+                        cv2.imwrite( + "/goal_main.png{}".format(ind),
+                                    imagemain, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT, 1])
+                        cv2.imwrite(savedir + "/goal_aux1.png{}".format(ind),
+                                    imageaux1, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT, 1])
+                        state = self.get_endeffector_pos()
+                        with open(savedir + '/goalim{}'.format(ind), 'wb') as f:
+                            cPickle.dump({'main': imagemain, 'aux1': imageaux1, 'state': state}, f)
+
+                        break
+                    else:
+                        print 'wrong key!'
+
+
+    def load_goalimage(self, ind):
+        savedir = self.base_dir + '/goalimage'
+        with open(savedir + '/goalim{}'.format(ind), 'wb') as f:
+            dict = cPickle.load(f)
+            return  dict['main'], dict['aux1']
 
     def imp_ctrl_release_spring(self, maxstiff):
         self.imp_ctrl_release_spring_pub.publish(maxstiff)
-
 
     def run_visual_mpc(self):
 
@@ -88,7 +127,6 @@ class Visual_MPC_Client():
         start_tr = 0
 
         for tr in range(start_tr, self.num_traj):
-
 
             tstart = datetime.now()
             # self.run_trajectory_const_speed(tr)
@@ -139,7 +177,8 @@ class Visual_MPC_Client():
     def init_traj(self, itr):
         try:
             rospy.wait_for_service('init_traj', timeout=0.1)
-            resp1 = self.init_traj_visual_func(itr, 0)
+            img_main, img_aux1, state = self.load_goalimage(itr)
+            resp1 = self.init_traj_visual_func(itr, 0, img_main, img_aux1, state)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
@@ -148,7 +187,7 @@ class Visual_MPC_Client():
 
         self.ctrl.set_neutral(speed= 0.3)
         self.ctrl.gripper.open()
-        self.init_traj(i_tr)
+        self.init_traj(i_tr, )
 
         self.gripper_closed = False
         self.gripper_up = False
@@ -164,8 +203,6 @@ class Visual_MPC_Client():
         self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height])], axis=0)
 
         self.topen, self.t_down = 0, 0
-
-        duration = 10  # duration of trajectory in seconds
 
         #move to start:
         self.move_to_startpos()
