@@ -29,8 +29,11 @@ class Primitive_Executor(object):
         self.num_traj = 50000
 
         # must be an uneven number
-        self.state_sequence_length = 30 # number of snapshots that are taken
-
+        seq_length = 16
+        n_traj_per_run = 4
+        self.act_every = 4
+        self.duration = 12  # duration of trajectory in seconds
+        self.state_sequence_length = seq_length*n_traj_per_run # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
         self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/newrecording",
@@ -101,7 +104,7 @@ class Primitive_Executor(object):
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
             accum_time += delta.total_seconds()
 
-            avg_nstep = 90
+            avg_nstep = 80
             if ((tr+1)% avg_nstep) == 0:
                 average = accum_time/avg_nstep
                 self.write_timing_file(average)
@@ -180,20 +183,20 @@ class Primitive_Executor(object):
 
         self.topen, self.t_down = 0, 0
 
-        duration = 12 # duration of trajectory in seconds
+
 
         #move to start:
         self.move_to_startpos()
 
         start_time = rospy.get_time()  # in seconds
-        finish_time = start_time + duration  # in seconds
+        finish_time = start_time + self.duration  # in seconds
         print 'start time', start_time
         print 'finish_time', finish_time
 
-        tsave = np.linspace(0, duration, self.state_sequence_length)
+        tsave = np.linspace(0, self.duration, self.state_sequence_length)
         print 'save times', tsave
-        act_every_n = 5  # take a new action every n steps, original: 2 !!!
-        tact = tsave[::act_every_n]
+
+        tact = tsave[::self.act_every]
         print 'cmd new pos times ', tact
 
         i_act = 0  # index of current commanded point
