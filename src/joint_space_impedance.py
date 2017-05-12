@@ -131,7 +131,7 @@ class JointSprings(object):
         as defined on the dynamic reconfigure server.
         """
 
-        print self._springs
+        # print self._springs
         self.adjust_springs()
 
         # disable cuff interaction

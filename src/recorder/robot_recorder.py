@@ -356,7 +356,7 @@ class RobotRecorder(object):
             raise ValueError('d_img_cropped_8bit no data received')
 
         self.t_finish_save.append(rospy.get_time())
-        if i_tr == self.state_sequence_length-1:
+        if i_tr == (self.state_sequence_length-1):
             with open(self.image_folder+'/{}_snapshot_timing.pkl'.format(pref), 'wb') as f:
                 dict = {'t_finish_save': self.t_finish_save }
                 if pref == 'aux1':
