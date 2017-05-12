@@ -38,8 +38,7 @@ class Primitive_Executor(object):
 
         self.ctrl = robot_controller.RobotController()
         self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/newrecording",
-                                                     start_loop=False,
-                                                     seq_len = self.state_sequence_length)
+                                                     seq_len=self.state_sequence_length)
 
         self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
 

@@ -34,7 +34,7 @@ class Latest_observation(object):
 
 
 class RobotRecorder(object):
-    def __init__(self, save_dir, rate=50, start_loop=False, seq_len = None):
+    def __init__(self, save_dir, seq_len = None):
         """
         Records joint data to a file at a specified rate.
         rate: recording frequency in Hertz
