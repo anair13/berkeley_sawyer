@@ -77,6 +77,9 @@ class RobotRecorder(object):
         self.ngroup = 1000
         self.igrp = 0
 
+        #for timing analysis:
+        self.t_finish_save = []
+
         # if it is an auxiliary node advertise services
         if socket.gethostname() == 'kinectbox1':
 
@@ -87,6 +90,7 @@ class RobotRecorder(object):
             rospy.Service('init_traj', init_traj, self.init_traj_handler)
             rospy.Service('delete_traj', delete_traj, self.delete_traj_handler)
 
+            self.t_get_request = []
             rospy.spin()
         elif socket.gethostname() == 'kullback':
             # initializing the client:
@@ -105,6 +109,7 @@ class RobotRecorder(object):
 
     def save_kinect_handler(self, req):
         self.t_savereq = rospy.get_time()
+        self.t_get_request.append(self.t_savereq)
         self._save_img_local(req.itr)
         return save_kinectdataResponse()
 
@@ -311,6 +316,7 @@ class RobotRecorder(object):
     def _save_img_local(self, i_tr):
 
         pref = self.instance_type
+
         #saving image
         # saving the full resolution image
         if self.ltob.img_cv2 is not None:
@@ -348,6 +354,14 @@ class RobotRecorder(object):
             cv2.imwrite(image_name, self.ltob.d_img_cropped_8bit, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT, 1])
         else:
             raise ValueError('d_img_cropped_8bit no data received')
+
+        self.t_finish_save.append(rospy.get_time())
+        if i_tr == self.state_sequence_length-1:
+            with open(self.image_folder+'/{}_snapshot_timing.pkl'.format(pref), 'wb') as f:
+                dict = {'t_finish_save': self.t_finish_save }
+                if pref == 'aux1':
+                    dict['t_get_request'] = self.t_get_request
+                cPickle.dump(dict, f)
 
 if __name__ ==  '__main__':
     print 'started'
