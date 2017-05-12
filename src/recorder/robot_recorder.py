@@ -49,15 +49,17 @@ class RobotRecorder(object):
 
         rospy.loginfo('hostname is :{}'.format(socket.gethostname()))
         if socket.gethostname() == 'kullback':
-            # if node is not running on kullback it is an auxiliary recorder
+            # the main instance one also records actions and joint angles
             self.instance_type = 'main'
             self._gripper = None
             self.gripper_name = '_'.join([side, 'gripper'])
             import intera_interface
             self._limb_right = intera_interface.Limb(side)
         elif socket.gethostname() == 'kinectbox1':
+            # auxiliary recorder
+            rospy.init_node('aux_recorder1')
+            rospy.loginfo("init node aux_recorder1")
             # instance running on kullback is called main;
-            # them main instance one also records actions and joint angles
             self.instance_type = 'aux1'
 
         print 'init recorder with instance type', self.instance_type
@@ -77,8 +79,7 @@ class RobotRecorder(object):
 
         # if it is an auxiliary node advertise services
         if socket.gethostname() == 'kinectbox1':
-            rospy.init_node('aux_recorder1')
-            rospy.loginfo("init node aux_recorder1")
+
 
             # initializing the server:
             rospy.Service('save_kinectdata', save_kinectdata, self.save_kinect_handler)
@@ -90,6 +91,7 @@ class RobotRecorder(object):
         elif socket.gethostname() == 'kullback':
             # initializing the client:
             self.get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
+            self.save_kinectdata_func = rospy.ServiceProxy('save_kinectdata', save_kinectdata)
             self.init_traj_func = rospy.ServiceProxy('init_traj', init_traj)
             self.delete_traj_func = rospy.ServiceProxy('delete_traj', delete_traj)
 
@@ -257,15 +259,10 @@ class RobotRecorder(object):
         # request save at auxiliary recorders
         try:
             rospy.wait_for_service('get_kinectdata', 0.1)
-            resp1 = self.get_kinectdata_func(i_save)
-            self.ltob_aux1.img_msg = resp1.image
-
-            #rospy.loginfo("t calling service {}".format(rospy.get_time() - t2))
+            resp1 = self.save_kinectdata_func(i_save)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
-        #rospy.loginfo("time to complete service {}".format(rospy.get_time()- self.t_savereq))
-
         self._save_img_local(i_save)
         self._save_state_actions(i_save, action, endeffector_pose)
 

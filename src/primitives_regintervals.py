@@ -84,8 +84,6 @@ class Primitive_Executor(object):
         accum_time = 0
         for tr in range(start_tr, self.num_traj):
 
-            self.alive_publisher.publish('still alive!')
-
             tstart = datetime.now()
             # self.run_trajectory_const_speed(tr)
             done = False
@@ -96,7 +94,7 @@ class Primitive_Executor(object):
                 except Traj_aborted_except:
                     self.recorder.delete_traj(tr)
 
-            if ((tr+1)% 30) == 0:
+            if ((tr+1)% 20) == 0:
                 self.redistribute_objects()
 
             delta = datetime.now() - tstart
@@ -110,6 +108,7 @@ class Primitive_Executor(object):
                 accum_time = 0
 
             self.write_ckpt(tr, self.recorder.igrp)
+            self.alive_publisher.publish('still alive!')
 
 
     def write_ckpt(self, tr, i_grp):
@@ -193,7 +192,8 @@ class Primitive_Executor(object):
 
         tsave = np.linspace(0, duration, self.state_sequence_length)
         print 'save times', tsave
-        tact = tsave[::2]
+        act_every_n = 5  # take a new action every n steps, original: 2 !!!
+        tact = tsave[::act_every_n]
         print 'cmd new pos times ', tact
 
         i_act = 0  # index of current commanded point
