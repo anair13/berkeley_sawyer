@@ -362,6 +362,7 @@ class RobotRecorder(object):
                     dict['t_get_request'] = self.t_get_request
                 cPickle.dump(dict, f)
 
+
 if __name__ ==  '__main__':
     print 'started'
     rec = RobotRecorder('/home/guser/Documents/sawyer_data/newrecording', seq_len=48)
