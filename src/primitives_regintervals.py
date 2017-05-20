@@ -18,6 +18,7 @@ import robot_controller
 from recorder import robot_recorder
 import os
 import cPickle
+import copy
 
 
 class Traj_aborted_except(Exception):
@@ -29,13 +30,15 @@ class Primitive_Executor(object):
         self.num_traj = 50000
 
         # must be an uneven number
-        self.state_sequence_length = 30 # number of snapshots that are taken
-
+        seq_length = 16
+        n_traj_per_run = 3
+        self.act_every = 4
+        self.duration = 12  # duration of trajectory in seconds
+        self.state_sequence_length = seq_length*n_traj_per_run # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
         self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/newrecording",
-                                                     start_loop=False,
-                                                     seq_len = self.state_sequence_length)
+                                                     seq_len=self.state_sequence_length)
 
         self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
 
@@ -61,10 +64,12 @@ class Primitive_Executor(object):
         self.use_imp_ctrl = True
         self.robot_move = True
         self.save_active = True
+        self.interpolate = True
         self.checkpoint_file = os.path.join(self.recorder.save_dir, 'checkpoint.txt')
 
         self.control_rate = rospy.Rate(1000)
         self.run_data_collection()
+
 
     def run_data_collection(self):
 
@@ -84,8 +89,6 @@ class Primitive_Executor(object):
         accum_time = 0
         for tr in range(start_tr, self.num_traj):
 
-            self.alive_publisher.publish('still alive!')
-
             tstart = datetime.now()
             # self.run_trajectory_const_speed(tr)
             done = False
@@ -96,20 +99,21 @@ class Primitive_Executor(object):
                 except Traj_aborted_except:
                     self.recorder.delete_traj(tr)
 
-            if ((tr+1)% 30) == 0:
+            if ((tr+1)% 20) == 0:
                 self.redistribute_objects()
 
             delta = datetime.now() - tstart
             print 'trajectory {0} took {1} seconds'.format(tr, delta.total_seconds())
             accum_time += delta.total_seconds()
 
-            avg_nstep = 90
+            avg_nstep = 80
             if ((tr+1)% avg_nstep) == 0:
                 average = accum_time/avg_nstep
                 self.write_timing_file(average)
                 accum_time = 0
 
             self.write_ckpt(tr, self.recorder.igrp)
+            self.alive_publisher.publish('still alive!')
 
 
     def write_ckpt(self, tr, i_grp):
@@ -181,34 +185,52 @@ class Primitive_Executor(object):
 
         self.topen, self.t_down = 0, 0
 
-        duration = 12 # duration of trajectory in seconds
-
         #move to start:
         self.move_to_startpos()
 
         start_time = rospy.get_time()  # in seconds
-        finish_time = start_time + duration  # in seconds
+        finish_time = start_time + self.duration  # in seconds
         print 'start time', start_time
         print 'finish_time', finish_time
 
-        tsave = np.linspace(0, duration, self.state_sequence_length)
+        tsave = np.linspace(0, self.duration, self.state_sequence_length)
         print 'save times', tsave
-        tact = tsave[::2]
+
+        tact = tsave[::self.act_every]
         print 'cmd new pos times ', tact
 
         i_act = 0  # index of current commanded point
         i_save = 0  # index of current saved step
 
         self.ctrl.limb.set_joint_position_speed(.20)
-
+        self.previous_des_pos = copy.deepcopy(self.des_pos)
+        self.t_prev = tact[0]
+        self.t_next = tact[1]
         while rospy.get_time() < finish_time:
             self.curr_delta_time = rospy.get_time() - start_time
 
             if i_act < len(tact):
                 if self.curr_delta_time > tact[i_act]:
                     print 'current position error', self.des_pos - self.get_endeffector_pos(pos_only=True)
-                    action_vec, des_joint_angles = self.act_joint(i_act)  # after completing trajectory save final state
+
+                    if self.interpolate:
+                        self.previous_des_pos = copy.deepcopy(self.des_pos)
+                        action_vec = self.act_joint(i_act)  # after completing trajectory save final state
+                        print 'prev_desired pos in step {0}: {1}'.format(i_act, self.previous_des_pos)
+                        print 'new desired pos in step {0}: {1}'.format(i_act, self.des_pos)
+
+                    else:
+                        action_vec, des_joint_angles = self.act_joint(i_act)  # after completing trajectory save final state
+                    print 'action vec', action_vec
+                    self.t_prev = tact[i_act]
+                    if i_act == len(tact)-1:
+                        self.t_next = tsave[-1]
+                    else:
+                        self.t_next = tact[i_act + 1]
                     i_act += 1
+
+            if self.interpolate:
+                des_joint_angles = self.get_interpolated_joint_angles()
 
             try:
                 if self.robot_move:
@@ -229,7 +251,7 @@ class Primitive_Executor(object):
             if self.curr_delta_time > tsave[i_save]:
 
                 print 'saving index{}'.format(i_save)
-                print 'action vec', action_vec
+
                 if self.save_active:
                     self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
                 i_save += 1
@@ -245,6 +267,42 @@ class Primitive_Executor(object):
             raise Traj_aborted_except('trajectory not complete!')
 
         self.goup()
+
+    def get_interpolated_joint_angles(self):
+        int_des_pos = self.calc_interpolation(self.previous_des_pos, self.des_pos, self.t_prev, self.t_next)
+        print 'interpolated: ', int_des_pos
+        desired_pose = inverse_kinematics.get_pose_stamped(int_des_pos[0],
+                                                           int_des_pos[1],
+                                                           int_des_pos[2],
+                                                           inverse_kinematics.EXAMPLE_O)
+        start_joints = self.ctrl.limb.joint_angles()
+        try:
+            des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
+                                                                   use_advanced_options=True)
+        except ValueError:
+            rospy.logerr('no inverse kinematics solution found, '
+                         'going to reset robot...')
+            current_joints = self.ctrl.limb.joint_angles()
+            self.ctrl.limb.set_joint_positions(current_joints)
+            raise Traj_aborted_except('raising Traj_aborted_except')
+
+        return des_joint_angles
+
+
+    def calc_interpolation(self, previous_goalpoint, next_goalpoint, t_prev, t_next):
+        """
+        interpolate cartesian positions (x,y,z) between last goalpoint and previous goalpoint at the current time
+        :param previous_goalpoint:
+        :param next_goalpoint:
+        :param goto_point:
+        :param tnewpos:
+        :return: des_pos
+        """
+        assert (self.curr_delta_time >= t_prev) or (self.curr_delta_time <= t_next)
+        des_pos = previous_goalpoint + (next_goalpoint - previous_goalpoint) * (self.curr_delta_time- t_prev)/ (t_next - t_prev)
+        # print 'current_delta_time: ', self.curr_delta_time
+        # print "interpolated pos:", des_pos
+        return des_pos
 
     def goup(self):
         print "going up at the end.."
@@ -292,7 +350,7 @@ class Primitive_Executor(object):
     def set_neutral_with_impedance(self):
         neutral_jointangles = [0.412271, -0.434908, -1.198768, 1.795462, 1.160788, 1.107675, 2.068076]
         cmd = dict(zip(self.ctrl.limb.joint_names(), neutral_jointangles))
-        self.imp_ctrl_release_spring(60)
+        self.imp_ctrl_release_spring(20)
         self.move_with_impedance_sec(cmd)
 
     def move_to_startpos(self):
@@ -313,7 +371,7 @@ class Primitive_Executor(object):
         try:
             if self.robot_move:
                 if self.use_imp_ctrl:
-                    self.imp_ctrl_release_spring(30)
+                    self.imp_ctrl_release_spring(20)
                     self.move_with_impedance_sec(des_joint_angles)
                 else:
                     self.ctrl.limb.move_to_joint_positions(des_joint_angles)
@@ -334,7 +392,7 @@ class Primitive_Executor(object):
         :return:
         """
 
-        maxshift = .07
+        maxshift = .1
         posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2), np.zeros(1)))
         self.des_pos += posshift
         self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
@@ -352,6 +410,7 @@ class Primitive_Executor(object):
         delta_up = .1
         if up_cmd != 0:
             self.t_down = i_act + up_cmd
+            self.imp_ctrl_release_spring(40.)
             self.des_pos[2] = self.lower_height + delta_up
             self.gripper_up = True
 
@@ -366,7 +425,7 @@ class Primitive_Executor(object):
             if i_act == self.t_down:
                 self.des_pos[2] = self.lower_height
                 print 'going down'
-                self.imp_ctrl_release_spring(30.)
+                self.imp_ctrl_release_spring(20.)
                 self.gripper_up = False
 
         action_vec = np.array([
@@ -375,22 +434,26 @@ class Primitive_Executor(object):
                                close_cmd,
                                up_cmd
                                ])
-        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
-                                                           self.des_pos[1],
-                                                           self.des_pos[2],
-                                                           inverse_kinematics.EXAMPLE_O)
-        start_joints = self.ctrl.limb.joint_angles()
-        try:
-            des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
-                                                      use_advanced_options=True)
-        except ValueError:
-            rospy.logerr('no inverse kinematics solution found, '
-                         'going to reset robot...')
-            current_joints = self.ctrl.limb.joint_angles()
-            self.ctrl.limb.set_joint_positions(current_joints)
-            raise Traj_aborted_except('raising Traj_aborted_except')
 
-        return action_vec, des_joint_angles
+        if self.interpolate:
+            return action_vec
+        else:
+            desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
+                                                               self.des_pos[1],
+                                                               self.des_pos[2],
+                                                               inverse_kinematics.EXAMPLE_O)
+            start_joints = self.ctrl.limb.joint_angles()
+            try:
+                des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
+                                                          use_advanced_options=True)
+            except ValueError:
+                rospy.logerr('no inverse kinematics solution found, '
+                             'going to reset robot...')
+                current_joints = self.ctrl.limb.joint_angles()
+                self.ctrl.limb.set_joint_positions(current_joints)
+                raise Traj_aborted_except('raising Traj_aborted_except')
+
+            return action_vec, des_joint_angles
 
     def act_distinct(self, i_act):
         """

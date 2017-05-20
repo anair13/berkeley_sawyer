@@ -86,14 +86,14 @@ class JointSprings(object):
         rospy.Subscriber("imp_ctrl_active", Int64, self._imp_ctrl_active)
 
         self.max_stiffness = 20
-        self.time_to_maxstiffness = .68
+        self.time_to_maxstiffness = .3  ######### 0.68
         self.t_release = rospy.get_time()
 
         self._imp_ctrl_is_active = True
 
         for joint in self._limb.joint_names():
             self._springs[joint] = 30
-            self._damping[joint] = 5
+            self._damping[joint] = 4
 
     def _imp_ctrl_active(self, inp):
         if inp.data == 1:
@@ -131,6 +131,7 @@ class JointSprings(object):
         as defined on the dynamic reconfigure server.
         """
 
+        # print self._springs
         self.adjust_springs()
 
         # disable cuff interaction
