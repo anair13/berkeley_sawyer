@@ -39,18 +39,18 @@ def comp_video(traj_list, file_path):
         vid_batch.append(img_list)
 
 
-        dimg_list = []
-        for t in range(traj_list[0].T):
-            dimg_ex = []
-            for tr in traj_list:
-                dimg = tr.dimages[t, cam]
-                dimg = np.expand_dims(dimg, axis=2)
-                dimg = np.repeat(dimg, 3, axis= 2)
-                dimg_ex.append(dimg)
-            dimg_batch = np.stack(dimg_ex, axis=0)
-            dimg_list.append(dimg_batch)
-
-        vid_batch.append(dimg_list)
+        # dimg_list = []
+        # for t in range(traj_list[0].T):
+        #     dimg_ex = []
+        #     for tr in traj_list:
+        #         dimg = tr.dimages[t, cam]
+        #         dimg = np.expand_dims(dimg, axis=2)
+        #         dimg = np.repeat(dimg, 3, axis= 2)
+        #         dimg_ex.append(dimg)
+        #     dimg_batch = np.stack(dimg_ex, axis=0)
+        #     dimg_list.append(dimg_batch)
+        #
+        # vid_batch.append(dimg_list)
 
     fused_gif = assemble_gif(vid_batch)
     npy_to_gif(fused_gif, file_path)
