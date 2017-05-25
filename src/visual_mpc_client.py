@@ -3,6 +3,7 @@ import numpy as np
 from datetime import datetime
 import pdb
 import rospy
+import matplotlib.pyplot as plt
 
 import socket
 if socket.gethostname() == 'kullback':
@@ -37,7 +38,7 @@ class Visual_MPC_Client():
     def __init__(self):
 
         parser = argparse.ArgumentParser(description='Run benchmarks')
-        parser.add_argument('collect_goalimage', default='False', type=str, help='whether to collect goalimages')
+        parser.add_argument('--collect_goalimage', default='False', type=str, help='whether to collect goalimages')
         args = parser.parse_args()
 
         self.num_traj = 50
@@ -46,10 +47,11 @@ class Visual_MPC_Client():
         self.action_sequence_length = 25 # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
-        self.base_dir ="/home/guser/sawyer_data/visual_mpc"
+        # self.base_dir ="/home/guser/sawyer_data/visual_mpc"
+        self.base_dir = "/home/frederik/Documents/berkeley_sawyer/src/testbasedir"
+
         self.recorder = robot_recorder.RobotRecorder(save_dir=self.base_dir,
-                                                     start_loop=False,
-                                                     seq_len = self.action_sequence_length)
+                                                     seq_len=self.action_sequence_length)
         # drive to neutral position:
         ################# self.ctrl.set_neutral()
         self.get_action_func = rospy.ServiceProxy('get_action', get_action)
@@ -66,13 +68,26 @@ class Visual_MPC_Client():
         self.robot_move = False
         self.save_active = False
 
+        self.use_goalimage = False
         self.bridge = CvBridge()
 
         if args.collect_goalimage == 'True':
             self.collect_goal_image()
         else:
+            self.mark_goal_desig()
+
             self.run_visual_mpc()
 
+
+    def mark_goal_desig(self):
+        from PIL import Image
+        i = 1
+        img = Image.open(self.base_dir + '/{}.png'.format(i))
+        img = img.rotate(180)
+
+        c = Getdesig(img, self.base_dir, 'b{}'.format(i))
+        self.desig_pos_aux1 = c.desig.astype(np.int32)
+        self.goal_pos_aux1 = c.goal.astype(np.int32)
 
     def collect_goal_image(self):
 
@@ -110,7 +125,6 @@ class Visual_MPC_Client():
                         break
                     else:
                         print 'wrong key!'
-
 
     def load_goalimage(self, ind):
         savedir = self.base_dir + '/goalimage'
@@ -224,7 +238,10 @@ class Visual_MPC_Client():
         state = self.get_endeffector_pos()
         try:
             rospy.wait_for_service('get_action', timeout=0.1)
-            action_vec = self.get_action_func(imagemain, imageaux1, tuple(state))
+            if not self.use_goalimage:
+                action_vec = self.get_action_func(imagemain, imageaux1,
+                                                  tuple(state), self.desig_pos_aux1, self.goal_pos_aux1)
+
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
@@ -394,6 +411,45 @@ class Visual_MPC_Client():
                     break
 
 
+class Getdesig(object):
+    def __init__(self,img,basedir,img_namesuffix):
+        self.suf = img_namesuffix
+        self.basedir = basedir
+        self.img = img
+        fig = plt.figure()
+        self.ax = fig.add_subplot(111)
+        self.ax.set_xlim(0, 63)
+        self.ax.set_ylim(63, 0)
+        plt.imshow(img)
+
+        self.desig = None
+        self.goal = None
+        cid = fig.canvas.mpl_connect('button_press_event', self.onclick)
+        self.i_click = 0
+        plt.show()
+
+    def onclick(self, event):
+        print('button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
+              (event.button, event.x, event.y, event.xdata, event.ydata))
+
+        self.ax.set_xlim(0, 63)
+        self.ax.set_ylim(63, 0)
+
+        self.i_click += 1
+
+        if self.i_click == 1:
+
+            self.desig = np.array([event.ydata, event.xdata])
+            self.ax.scatter(self.desig[1], self.desig[0], s=60, facecolors='none', edgecolors='b')
+            plt.draw()
+        elif self.i_click == 2:
+            self.goal = np.array([event.ydata, event.xdata])
+            self.ax.scatter(self.goal[1], self.goal[0], s=60, facecolors='none', edgecolors='g')
+            plt.draw()
+
+        else:
+            plt.savefig(self.basedir +'/img_desigpix'+self.suf)
+            plt.close()
 
 if __name__ == '__main__':
     mpc = Visual_MPC_Client()
