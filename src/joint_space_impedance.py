@@ -135,7 +135,8 @@ class JointSprings(object):
         self.adjust_springs()
 
         # disable cuff interaction
-        self._pub_cuff_disable.publish()
+        if self._imp_ctrl_is_active:
+            self._pub_cuff_disable.publish()
 
         # create our command dict
         cmd = dict()
