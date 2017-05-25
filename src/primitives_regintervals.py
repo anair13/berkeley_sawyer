@@ -30,10 +30,10 @@ class Primitive_Executor(object):
         self.num_traj = 50000
 
         # must be an uneven number
-        seq_length = 16
+        seq_length = 32
         n_traj_per_run = 3
         self.act_every = 4
-        self.duration = 12  # duration of trajectory in seconds
+        self.duration = 25 #16  # duration of trajectory in seconds
         self.state_sequence_length = seq_length*n_traj_per_run # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
@@ -99,7 +99,7 @@ class Primitive_Executor(object):
                 except Traj_aborted_except:
                     self.recorder.delete_traj(tr)
 
-            if ((tr+1)% 20) == 0:
+            if ((tr+1)% 1) == 0:  ##############
                 self.redistribute_objects()
 
             delta = datetime.now() - tstart
@@ -353,6 +353,7 @@ class Primitive_Executor(object):
         self.imp_ctrl_release_spring(20)
         self.move_with_impedance_sec(cmd)
 
+
     def move_to_startpos(self):
         desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
                                                            self.des_pos[1],
@@ -398,7 +399,7 @@ class Primitive_Executor(object):
         self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
 
 
-        self.imp_ctrl_release_spring(120.)
+
         close_cmd = np.random.choice(range(5), p=[0.8, 0.05, 0.05, 0.05, 0.05])
         if close_cmd != 0:
             self.topen = i_act + close_cmd
@@ -410,9 +411,9 @@ class Primitive_Executor(object):
         delta_up = .1
         if up_cmd != 0:
             self.t_down = i_act + up_cmd
-            self.imp_ctrl_release_spring(40.)
             self.des_pos[2] = self.lower_height + delta_up
             self.gripper_up = True
+            print 'going up'
 
 
         if self.gripper_closed:
@@ -421,12 +422,18 @@ class Primitive_Executor(object):
                 print 'opening gripper'
                 self.gripper_closed = False
 
+        go_down = False
         if self.gripper_up:
             if i_act == self.t_down:
                 self.des_pos[2] = self.lower_height
                 print 'going down'
-                self.imp_ctrl_release_spring(20.)
                 self.gripper_up = False
+                go_down = True
+
+        # if go_down:
+        #     self.imp_ctrl_release_spring(20.)
+        # else:
+        self.imp_ctrl_release_spring(100.)
 
         action_vec = np.array([
                                posshift[0],
@@ -553,44 +560,58 @@ class Primitive_Executor(object):
 
         return  pos
 
+    def redistribute_objects(self, file=None):
 
-    def redistribute_objects(self):
-        """
-        Loops playback of recorded joint position waypoints until program is
-        exited
-        """
-        with open('/home/guser/catkin_ws/src/berkeley_sawyer/src/waypts.pkl', 'r') as f:
-            waypoints = cPickle.load(f)
-        rospy.loginfo("Waypoint Playback Started")
+        file = '/home/guser/catkin_ws/src/berkeley_sawyer/src/utility/pushback_traj_.pkl'
 
-        # Set joint position speed ratio for execution
-        self.ctrl.limb.set_joint_position_speed(.2)
+        pdb.set_trace()
+        self.joint_pos = cPickle.load(open(file, "rb"))
 
-        # Loop until program is exited
-        do_repeat = True
-        n_repeat = 0
-        # self.imp_ctrl_active.publish(0)
-        while do_repeat and (n_repeat < 2):
-            do_repeat = False
-            n_repeat += 1
-            for i, waypoint in enumerate(waypoints):
-                if rospy.is_shutdown():
-                    break
-                try:
-                    print 'going to waypoint ', i
+        self.imp_ctrl_release_spring(100)
+        self.imp_ctrl_active.publish(1)
 
-                    if self.imp_ctrl_active:
-                        if i < 4:
-                            self.imp_ctrl_release_spring(30)
-                        else:
-                            self.imp_ctrl_release_spring(65)
-                        self.move_with_impedance_sec(waypoint, tsec=1.0)
-                    else:
-                        self.ctrl.limb.move_to_joint_positions(waypoint, timeout=5.0)
-                except:
-                    do_repeat = True
-                    break
-        # self.imp_ctrl_active.publish(1)
+        for t in range(len(self.joint_pos)):
+            print 'step {0} joints: {1}'.format(t, self.joint_pos[t])
+            self.control_rate.sleep()
+            self.move_with_impedance(self.joint_pos[t])
+
+    # def redistribute_objects(self):
+        # """
+        # Loops playback of recorded joint position waypoints until program is
+        # exited
+        # """
+        # with open('/home/guser/catkin_ws/src/berkeley_sawyer/src/waypts.pkl', 'r') as f:
+        #     waypoints = cPickle.load(f)
+        # rospy.loginfo("Waypoint Playback Started")
+        #
+        # # Set joint position speed ratio for execution
+        # self.ctrl.limb.set_joint_position_speed(.2)
+        #
+        # # Loop until program is exited
+        # do_repeat = True
+        # n_repeat = 0
+        # # self.imp_ctrl_active.publish(0)
+        # while do_repeat and (n_repeat < 2):
+        #     do_repeat = False
+        #     n_repeat += 1
+        #     for i, waypoint in enumerate(waypoints):
+        #         if rospy.is_shutdown():
+        #             break
+        #         try:
+        #             print 'going to waypoint ', i
+        #
+        #             if self.imp_ctrl_active:
+        #                 if i < 2:
+        #                     self.imp_ctrl_release_spring(20)
+        #                 else:
+        #                     self.imp_ctrl_release_spring(50)
+        #                 self.move_with_impedance_sec(waypoint, tsec=.9)
+        #             else:
+        #                 self.ctrl.limb.move_to_joint_positions(waypoint, timeout=5.0)
+        #         except:
+        #             do_repeat = True
+        #             break
+        # # self.imp_ctrl_active.publish(1)
 
 def main():
     pexec = Primitive_Executor()
