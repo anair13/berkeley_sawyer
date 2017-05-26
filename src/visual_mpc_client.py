@@ -40,34 +40,33 @@ class Visual_MPC_Client():
         parser = argparse.ArgumentParser(description='Run benchmarks')
         parser.add_argument('--collect_goalimage', default='False', type=str, help='whether to collect goalimages')
         args = parser.parse_args()
-
         self.num_traj = 50
 
         # must be an uneven number
         self.action_sequence_length = 25 # number of snapshots that are taken
-
-        self.ctrl = robot_controller.RobotController()
-        # self.base_dir ="/home/guser/sawyer_data/visual_mpc"
+        self.use_robot = False
         self.base_dir = "/home/frederik/Documents/berkeley_sawyer/src/testbasedir"
 
-        self.recorder = robot_recorder.RobotRecorder(save_dir=self.base_dir,
+        if self.use_robot:
+            self.ctrl = robot_controller.RobotController()
+            # self.base_dir ="/home/guser/sawyer_data/visual_mpc"
+            self.recorder = robot_recorder.RobotRecorder(save_dir=self.base_dir,
                                                      seq_len=self.action_sequence_length)
+
         # drive to neutral position:
         ################# self.ctrl.set_neutral()
         self.get_action_func = rospy.ServiceProxy('get_action', get_action)
         self.init_traj_visual_func = rospy.ServiceProxy('init_traj_visualmpc', init_traj_visualmpc)
-        self.robot_move = True
 
-        self.imp_ctrl_publisher = rospy.Publisher('desired_joint_pos', JointState, queue_size=1)
-        self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
-        self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
-        self.name_of_service = "ExternalTools/right/PositionKinematicsNode/FKService"
-        self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
+        if self.use_robot:
+            self.imp_ctrl_publisher = rospy.Publisher('desired_joint_pos', JointState, queue_size=1)
+            self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
+            self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
+            self.name_of_service = "ExternalTools/right/PositionKinematicsNode/FKService"
+            self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
+            self.use_imp_ctrl = True
 
-        self.use_imp_ctrl = True
-        self.robot_move = False
         self.save_active = False
-
         self.use_goalimage = False
         self.bridge = CvBridge()
 
@@ -75,7 +74,6 @@ class Visual_MPC_Client():
             self.collect_goal_image()
         else:
             self.mark_goal_desig()
-
             self.run_visual_mpc()
 
 
@@ -83,11 +81,13 @@ class Visual_MPC_Client():
         from PIL import Image
         i = 1
         img = Image.open(self.base_dir + '/{}.png'.format(i))
-        img = img.rotate(180)
+        self.test_img = img = img.rotate(180)
 
         c = Getdesig(img, self.base_dir, 'b{}'.format(i))
         self.desig_pos_aux1 = c.desig.astype(np.int32)
+        print 'desig pos aux1:', self.desig_pos_aux1
         self.goal_pos_aux1 = c.goal.astype(np.int32)
+        print 'goal pos main:', self.goal_pos_aux1
 
     def collect_goal_image(self):
 
@@ -199,27 +199,28 @@ class Visual_MPC_Client():
 
     def run_trajectory(self, i_tr):
 
-        self.ctrl.set_neutral(speed= 0.3)
-        self.ctrl.gripper.open()
-        self.init_traj(i_tr, )
+        if self.use_robot:
+            self.ctrl.set_neutral(speed= 0.3)
+            self.ctrl.gripper.open()
+            self.init_traj(i_tr, )
 
-        self.gripper_closed = False
-        self.gripper_up = False
+            self.gripper_closed = False
+            self.gripper_up = False
 
-        self.load_goalimage(i_tr)
-        self.recorder.init_traj(i_tr)
+            self.load_goalimage(i_tr)
+            self.recorder.init_traj(i_tr)
 
-        self.lower_height = 0.21
-        self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
-        self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
+            self.lower_height = 0.21
+            self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
+            self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
 
-        startpos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]), np.random.uniform(self.ylim[0], self.ylim[1])])
-        self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height])], axis=0)
+            startpos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]), np.random.uniform(self.ylim[0], self.ylim[1])])
+            self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height])], axis=0)
 
-        self.topen, self.t_down = 0, 0
+            self.topen, self.t_down = 0, 0
 
-        #move to start:
-        self.move_to_startpos()
+            #move to start:
+            self.move_to_startpos()
 
         i_save = 0  # index of current saved step
         for i_act in range(self.action_sequence_length):
@@ -232,10 +233,15 @@ class Visual_MPC_Client():
                 i_save += 1
 
     def query_action(self):
-        self.recorder.get_aux_img()
-        imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
-        imageaux1 = self.recorder.ltob_aux1.img_msg
-        state = self.get_endeffector_pos()
+        if self.use_robot:
+            self.recorder.get_aux_img()
+            imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
+            imageaux1 = self.recorder.ltob_aux1.img_msg
+            state = self.get_endeffector_pos()
+        else:
+            imagemain = np.zeros_like(self.test_img)
+            imageaux1 = self.test_img
+            state = np.zeros(3)
         try:
             rospy.wait_for_service('get_action', timeout=0.1)
             if not self.use_goalimage:
@@ -244,7 +250,7 @@ class Visual_MPC_Client():
 
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
-            raise ValueError('get_kinectdata service failed')
+            raise ValueError('get action service call failed')
         return action_vec
 
 
@@ -289,7 +295,7 @@ class Visual_MPC_Client():
             self.ctrl.limb.set_joint_positions(current_joints)
             raise Traj_aborted_except('raising Traj_aborted_except')
         try:
-            if self.robot_move:
+            if self.use_robot:
                 if self.use_imp_ctrl:
                     self.imp_ctrl_release_spring(30)
                     self.move_with_impedance_sec(des_joint_angles)
@@ -352,7 +358,7 @@ class Visual_MPC_Client():
             raise Traj_aborted_except('raising Traj_aborted_except')
 
         try:
-            if self.robot_move:
+            if self.use_robot:
                 self.ctrl.limb.set_joint_positions(des_joint_angles)
                 # print des_joint_angles
         except OSError:
