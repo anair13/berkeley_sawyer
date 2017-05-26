@@ -14,12 +14,14 @@ if socket.gethostname() == 'kullback':
     import intera_external_devices
 
 import argparse
+import imutils
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
 
+from PIL import Image
 import inverse_kinematics
 import robot_controller
 from recorder import robot_recorder
@@ -44,14 +46,15 @@ class Visual_MPC_Client():
 
         # must be an uneven number
         self.action_sequence_length = 25 # number of snapshots that are taken
-        self.use_robot = False
-        self.base_dir = "/home/frederik/Documents/berkeley_sawyer/src/testbasedir"
+        self.use_robot = True
+        # self.base_dir = "/home/frederik/Documents/berkeley_sawyer/src/testbasedir"
+        self.base_dir = "/home/guser/catkin_ws/src/berkeley_sawyer/src/testbasedir"
 
         if self.use_robot:
             self.ctrl = robot_controller.RobotController()
             # self.base_dir ="/home/guser/sawyer_data/visual_mpc"
             self.recorder = robot_recorder.RobotRecorder(save_dir=self.base_dir,
-                                                     seq_len=self.action_sequence_length)
+                                                            seq_len=self.action_sequence_length)
 
         # drive to neutral position:
         ################# self.ctrl.set_neutral()
@@ -70,6 +73,8 @@ class Visual_MPC_Client():
         self.use_goalimage = False
         self.bridge = CvBridge()
 
+        rospy.sleep(1)
+
         if args.collect_goalimage == 'True':
             self.collect_goal_image()
         else:
@@ -78,15 +83,31 @@ class Visual_MPC_Client():
 
 
     def mark_goal_desig(self):
-        from PIL import Image
-        i = 1
-        img = Image.open(self.base_dir + '/{}.png'.format(i))
-        self.test_img = img = img.rotate(180)
 
-        c = Getdesig(img, self.base_dir, 'b{}'.format(i))
-        self.desig_pos_aux1 = c.desig.astype(np.int32)
+        if not self.use_robot:
+            i = 1
+            img = Image.open(self.base_dir + '/{}.png'.format(i))
+            img = img.rotate(180)
+            self.test_img = np.asarray(img)
+            self.test_img = np.concatenate([self.test_img, np.zeros((1,64,3))], axis=0)
+            c_aux1 = Getdesig(self.test_img, self.base_dir, 'b{}'.format(i))
+        else:
+            imagemain = self.recorder.ltob.img_cropped
+            imagemain = cv2.cvtColor(imagemain, cv2.COLOR_BGR2RGB)
+            c_main = Getdesig(imagemain, self.base_dir)
+
+            self.recorder.get_aux_img()
+            imageaux1 = self.bridge.imgmsg_to_cv2(self.recorder.ltob_aux1.img_msg)
+            imageaux1 = cv2.cvtColor(imageaux1, cv2.COLOR_BGR2RGB)
+            # self.bridge.imgmsg_to_cv2(data, "bgr8")  # (1920, 1080)
+            imageaux1 = imutils.rotate_bound(imageaux1, 180)
+
+            c_aux1 = Getdesig(imageaux1, self.base_dir)
+
+
+        self.desig_pos_aux1 = c_aux1.desig.astype(np.int32)
         print 'desig pos aux1:', self.desig_pos_aux1
-        self.goal_pos_aux1 = c.goal.astype(np.int32)
+        self.goal_pos_aux1 = c_aux1.goal.astype(np.int32)
         print 'goal pos main:', self.goal_pos_aux1
 
     def collect_goal_image(self):
@@ -191,7 +212,8 @@ class Visual_MPC_Client():
     def init_traj(self, itr):
         try:
             rospy.wait_for_service('init_traj', timeout=0.1)
-            img_main, img_aux1, state = self.load_goalimage(itr)
+            if self.use_goalimage:
+                img_main, img_aux1, state = self.load_goalimage(itr)
             resp1 = self.init_traj_visual_func(itr, 0, img_main, img_aux1, state)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
@@ -200,9 +222,10 @@ class Visual_MPC_Client():
     def run_trajectory(self, i_tr):
 
         if self.use_robot:
+            print 'setting neutral'
             self.ctrl.set_neutral(speed= 0.3)
             self.ctrl.gripper.open()
-            self.init_traj(i_tr, )
+            # self.init_traj(i_tr, )
 
             self.gripper_closed = False
             self.gripper_up = False
@@ -240,13 +263,16 @@ class Visual_MPC_Client():
             state = self.get_endeffector_pos()
         else:
             imagemain = np.zeros_like(self.test_img)
-            imageaux1 = self.test_img
+            imagemain = self.bridge.cv2_to_imgmsg(imagemain)
+            imageaux1 = self.bridge.cv2_to_imgmsg(self.test_img)
             state = np.zeros(3)
         try:
-            rospy.wait_for_service('get_action', timeout=0.1)
+            rospy.wait_for_service('get_action', timeout=240)
             if not self.use_goalimage:
                 action_vec = self.get_action_func(imagemain, imageaux1,
-                                                  tuple(state), self.desig_pos_aux1, self.goal_pos_aux1)
+                                                  tuple(state),
+                                                  tuple(self.desig_pos_aux1),
+                                                  tuple(self.goal_pos_aux1))
 
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
@@ -418,7 +444,7 @@ class Visual_MPC_Client():
 
 
 class Getdesig(object):
-    def __init__(self,img,basedir,img_namesuffix):
+    def __init__(self,img,basedir,img_namesuffix = ''):
         self.suf = img_namesuffix
         self.basedir = basedir
         self.img = img

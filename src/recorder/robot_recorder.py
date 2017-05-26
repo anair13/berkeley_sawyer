@@ -114,6 +114,8 @@ class RobotRecorder(object):
         return save_kinectdataResponse()
 
     def get_kinect_handler(self, req):
+        print "handle get_kinect_request"
+
         img = np.asarray(self.ltob.img_cropped)
         img = self.bridge.cv2_to_imgmsg(img)
         return get_kinectdataResponse(img)
