@@ -45,7 +45,7 @@ class Visual_MPC_Client():
         self.num_traj = 50
 
         # must be an uneven number
-        self.action_sequence_length = 25 # number of snapshots that are taken
+        self.action_sequence_length = 14 # number of snapshots that are taken
         self.use_robot = True
         # self.base_dir = "/home/frederik/Documents/berkeley_sawyer/src/testbasedir"
         self.base_dir = "/home/guser/catkin_ws/src/berkeley_sawyer/src/testbasedir"
@@ -67,19 +67,28 @@ class Visual_MPC_Client():
             self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
             self.name_of_service = "ExternalTools/right/PositionKinematicsNode/FKService"
             self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
-            self.use_imp_ctrl = True
 
-        self.save_active = False
+        self.use_imp_ctrl = True
+        self.interpolate = False
+
+        self.save_active = True
         self.use_goalimage = False
         self.bridge = CvBridge()
 
+        self.max_exec_rate = rospy.Rate(1)
+
         rospy.sleep(1)
+        # drive to neutral position:
+        self.imp_ctrl_active.publish(0)
+        self.ctrl.set_neutral()
+        self.set_neutral_with_impedance()
+        self.imp_ctrl_active.publish(1)
+        rospy.sleep(.2)
 
         if args.collect_goalimage == 'True':
             self.collect_goal_image()
-        else:
-            self.mark_goal_desig()
-            self.run_visual_mpc()
+
+        self.run_visual_mpc()
 
 
     def mark_goal_desig(self):
@@ -90,25 +99,22 @@ class Visual_MPC_Client():
             img = img.rotate(180)
             self.test_img = np.asarray(img)
             self.test_img = np.concatenate([self.test_img, np.zeros((1,64,3))], axis=0)
-            c_aux1 = Getdesig(self.test_img, self.base_dir, 'b{}'.format(i))
+            c_main = Getdesig(self.test_img, self.base_dir, 'b{}'.format(i))
         else:
             imagemain = self.recorder.ltob.img_cropped
             imagemain = cv2.cvtColor(imagemain, cv2.COLOR_BGR2RGB)
             c_main = Getdesig(imagemain, self.base_dir)
 
-            self.recorder.get_aux_img()
-            imageaux1 = self.bridge.imgmsg_to_cv2(self.recorder.ltob_aux1.img_msg)
-            imageaux1 = cv2.cvtColor(imageaux1, cv2.COLOR_BGR2RGB)
-            # self.bridge.imgmsg_to_cv2(data, "bgr8")  # (1920, 1080)
-            imageaux1 = imutils.rotate_bound(imageaux1, 180)
+            # self.recorder.get_aux_img()
+            # imageaux1 = self.bridge.imgmsg_to_cv2(self.recorder.ltob_aux1.img_msg)
+            # imageaux1 = cv2.cvtColor(imageaux1, cv2.COLOR_BGR2RGB)
+            # # self.bridge.imgmsg_to_cv2(data, "bgr8")  # (1920, 1080)
+            # c_aux1 = Getdesig(imageaux1, self.base_dir)
 
-            c_aux1 = Getdesig(imageaux1, self.base_dir)
-
-
-        self.desig_pos_aux1 = c_aux1.desig.astype(np.int32)
-        print 'desig pos aux1:', self.desig_pos_aux1
-        self.goal_pos_aux1 = c_aux1.goal.astype(np.int32)
-        print 'goal pos main:', self.goal_pos_aux1
+        self.desig_pos_main = c_main.desig.astype(np.int32)
+        print 'desig pos aux1:', self.desig_pos_main
+        self.goal_pos_main = c_main.goal.astype(np.int32)
+        print 'goal pos main:', self.goal_pos_main
 
     def collect_goal_image(self):
 
@@ -211,10 +217,18 @@ class Visual_MPC_Client():
 
     def init_traj(self, itr):
         try:
-            rospy.wait_for_service('init_traj', timeout=0.1)
+            self.recorder.init_traj(itr)
+            rospy.wait_for_service('init_traj', timeout=240)
             if self.use_goalimage:
-                img_main, img_aux1, state = self.load_goalimage(itr)
-            resp1 = self.init_traj_visual_func(itr, 0, img_main, img_aux1, state)
+                goal_img_main, goal_img_aux1 = self.load_goalimage(itr)
+            else:
+                goal_img_main = np.zeros([64, 64, 3])
+                goal_img_aux1 = np.zeros([64, 64, 3])
+
+            goal_img_main = self.bridge.cv2_to_imgmsg(goal_img_main)
+            goal_img_aux1 = self.bridge.cv2_to_imgmsg(goal_img_aux1)
+            resp1 = self.init_traj_visual_func(itr, 0, goal_img_main, goal_img_aux1)
+
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
             raise ValueError('get_kinectdata service failed')
@@ -223,27 +237,41 @@ class Visual_MPC_Client():
 
         if self.use_robot:
             print 'setting neutral'
-            self.ctrl.set_neutral(speed= 0.3)
-            self.ctrl.gripper.open()
-            # self.init_traj(i_tr, )
+            rospy.sleep(.2)
+            # drive to neutral position:
+            self.imp_ctrl_active.publish(0)
+            self.ctrl.set_neutral()
+            self.set_neutral_with_impedance()
+            self.imp_ctrl_active.publish(1)
+            rospy.sleep(.2)
 
+            self.init_traj(i_tr)
+
+            self.ctrl.gripper.open()
             self.gripper_closed = False
             self.gripper_up = False
 
-            self.load_goalimage(i_tr)
-            self.recorder.init_traj(i_tr)
+            print 'place objects and press c and enter to continue!'
+            pdb.set_trace()
+            self.mark_goal_desig()
 
             self.lower_height = 0.21
             self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
             self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
 
-            startpos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]), np.random.uniform(self.ylim[0], self.ylim[1])])
+            random_start_pos = False
+            if random_start_pos:
+                startpos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]), np.random.uniform(self.ylim[0], self.ylim[1])])
+            else: startpos = self.get_endeffector_pos()[:2]
+
             self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height])], axis=0)
 
             self.topen, self.t_down = 0, 0
 
             #move to start:
-            self.move_to_startpos()
+            self.move_to_startpos(self.des_pos)
+
+
 
         i_save = 0  # index of current saved step
         for i_act in range(self.action_sequence_length):
@@ -254,6 +282,8 @@ class Visual_MPC_Client():
             if self.save_active:
                 self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
                 i_save += 1
+
+            self.max_exec_rate.sleep()
 
     def query_action(self):
         if self.use_robot:
@@ -269,10 +299,12 @@ class Visual_MPC_Client():
         try:
             rospy.wait_for_service('get_action', timeout=240)
             if not self.use_goalimage:
-                action_vec = self.get_action_func(imagemain, imageaux1,
+                get_action_resp = self.get_action_func(imagemain, imageaux1,
                                                   tuple(state),
-                                                  tuple(self.desig_pos_aux1),
-                                                  tuple(self.goal_pos_aux1))
+                                                  tuple(self.desig_pos_main),
+                                                  tuple(self.goal_pos_main))
+
+                action_vec = get_action_resp.action
 
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
@@ -302,13 +334,13 @@ class Visual_MPC_Client():
     def set_neutral_with_impedance(self):
         neutral_jointangles = [0.412271, -0.434908, -1.198768, 1.795462, 1.160788, 1.107675, 2.068076]
         cmd = dict(zip(self.ctrl.limb.joint_names(), neutral_jointangles))
-        self.imp_ctrl_release_spring(50)
+        self.imp_ctrl_release_spring(20)
         self.move_with_impedance_sec(cmd)
 
-    def move_to_startpos(self):
-        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
-                                                           self.des_pos[1],
-                                                           self.des_pos[2],
+    def move_to_startpos(self, pos):
+        desired_pose = inverse_kinematics.get_pose_stamped(pos[0],
+                                                           pos[1],
+                                                           pos[2],
                                                            inverse_kinematics.EXAMPLE_O)
         start_joints = self.ctrl.limb.joint_angles()
         try:
@@ -337,8 +369,7 @@ class Visual_MPC_Client():
             raise Traj_aborted_except('raising Traj_aborted_except')
 
     def apply_act(self, action_vec, i_act):
-
-        self.des_pos += action_vec[0:2]
+        self.des_pos[:2] += action_vec[:2]
         self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
         self.imp_ctrl_release_spring(120.)
 
@@ -383,19 +414,7 @@ class Visual_MPC_Client():
             self.ctrl.limb.set_joint_positions(current_joints)
             raise Traj_aborted_except('raising Traj_aborted_except')
 
-        try:
-            if self.use_robot:
-                self.ctrl.limb.set_joint_positions(des_joint_angles)
-                # print des_joint_angles
-        except OSError:
-            rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
-            rospy.sleep(.5)
-            raise Traj_aborted_except('raising Traj_aborted_except')
-        if self.ctrl.limb.has_collided():
-            rospy.logerr('collision detected!!!')
-            rospy.sleep(.5)
-            raise Traj_aborted_except('raising Traj_aborted_except')
-
+        self.move_with_impedance(des_joint_angles)
 
     def truncate_pos(self, pos):
 

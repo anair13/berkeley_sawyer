@@ -8,6 +8,7 @@ import shutil
 import socket
 import thread
 import numpy as np
+import imutils
 import pdb
 from berkeley_sawyer.srv import *
 from PIL import Image
@@ -176,12 +177,14 @@ class RobotRecorder(object):
     def crop_colorimg(self, cv_image):
         self.ltob.d_img_raw_npy = np.asarray(cv_image)
         if self.instance_type == 'main':
-            img = cv2.resize(cv_image, (0, 0), fx=1 / 15., fy=1 / 15., interpolation=cv2.INTER_AREA)
-            startrow = 2
-            startcol = 27
-        else:
             img = cv2.resize(cv_image, (0, 0), fx=1 / 16., fy=1 / 16., interpolation=cv2.INTER_AREA)
             startrow = 3
+            startcol = 27
+
+            img = imutils.rotate_bound(img, 180)
+        else:
+            img = cv2.resize(cv_image, (0, 0), fx=1 / 15., fy=1 / 15., interpolation=cv2.INTER_AREA)
+            startrow = 2
             startcol = 27
         endcol = startcol + 64
         endrow = startrow + 64
@@ -196,7 +199,7 @@ class RobotRecorder(object):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
         try:
-            rospy.wait_for_service('init_traj', timeout=0.1)
+            rospy.wait_for_service('init_traj', timeout=240)
             resp1 = self.init_traj_func(itr, self.igrp)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
