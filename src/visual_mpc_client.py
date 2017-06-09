@@ -36,24 +36,39 @@ from berkeley_sawyer.srv import *
 class Traj_aborted_except(Exception):
     pass
 
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 class Visual_MPC_Client():
     def __init__(self):
 
         parser = argparse.ArgumentParser(description='Run benchmarks')
-        parser.add_argument('--collect_goalimage', default='False', type=str, help='whether to collect goalimages')
+        parser.add_argument('--goalimage', action='store_true', help='whether to collect goalimages')
+        parser.add_argument('--steps', default=15, type=int, help='how many steps to execute')
+        parser.add_argument('--imgdir', default="", type=str, help='direcotry where to store images of designated pixels')
+
         args = parser.parse_args()
         self.num_traj = 50
 
-        # must be an uneven number
-        self.action_sequence_length = 14 # number of snapshots that are taken
+        self.action_sequence_length = args.steps # number of snapshots that are taken
         self.use_robot = True
-        self.base_dir = "/home/guser/catkin_ws/src/berkeley_sawyer/testimages/"
+        # self.base_dir = "/home/frederik/Documents/berkeley_sawyer/src/testbasedir"
+        self.recording_dir = "/home/guser/catkin_ws/src/berkeley_sawyer/src/recordings"
+
+        if args.imgdir != "":
+            self.desig_pix_img_dir = "/home/guser/catkin_ws/src/lsdc/experiments/cem_exp/benchmarks_sawyer/" + args.imgdir +"/videos"
+        else: self.desig_pix_img_dir = self.recording_dir
 
         if self.use_robot:
             self.ctrl = robot_controller.RobotController()
             # self.base_dir ="/home/guser/sawyer_data/visual_mpc"
-            self.recorder = robot_recorder.RobotRecorder(save_dir=self.base_dir,
-                                                            seq_len=self.action_sequence_length)
+            self.recorder = robot_recorder.RobotRecorder(save_dir=self.recording_dir,
+                                                         seq_len=self.action_sequence_length)
 
         # drive to neutral position:
         ################# self.ctrl.set_neutral()
@@ -69,14 +84,12 @@ class Visual_MPC_Client():
 
         self.use_imp_ctrl = True
         self.interpolate = False
-
-        self.save_active = True
-        self.use_goalimage = False
+        self.save_active = False
         self.bridge = CvBridge()
 
         self.max_exec_rate = rospy.Rate(1)
 
-        rospy.sleep(1)
+        rospy.sleep(.2)
         # drive to neutral position:
         self.imp_ctrl_active.publish(0)
         self.ctrl.set_neutral()
@@ -84,26 +97,29 @@ class Visual_MPC_Client():
         self.imp_ctrl_active.publish(1)
         rospy.sleep(.2)
 
-        if args.collect_goalimage == 'True':
-            self.collect_goal_image()
+        self.desig_pos_main = np.zeros(2)
+        self.goal_pos_main = np.zeros(2)
 
+        if args.goalimage == "True":
+            self.use_goalimage = True
+        else: self.use_goalimage = False
         self.run_visual_mpc()
 
-
-    def mark_goal_desig(self):
-
+    def mark_goal_desig(self, itr):
+        print 'prepare to mark goalpos and designated pixel! press c to continue!'
+        pdb.set_trace()
         if not self.use_robot:
             i = 1
-            img = Image.open(self.base_dir + '/{}.png'.format(i))
+            img = Image.open(self.recording_dir + '/{}.png'.format(i))
             img = img.rotate(180)
             self.test_img = np.asarray(img)
-            self.test_img = np.concatenate([self.test_img, np.zeros((1,64,3))], axis=0)
-            c_main = Getdesig(self.test_img, self.base_dir, 'b{}'.format(i))
+            self.test_img = np.concatenate([self.test_img, np.zeros((64,64,3))], axis=0)
+            c_main = Getdesig(self.test_img, self.recording_dir, 'b{}'.format(i))
         else:
             imagemain = self.recorder.ltob.img_cropped
+            assert imagemain != None
             imagemain = cv2.cvtColor(imagemain, cv2.COLOR_BGR2RGB)
-            c_main = Getdesig(imagemain, self.base_dir)
-
+            c_main = Getdesig(imagemain, self.desig_pix_img_dir, '_traj{}'.format(itr))
             # self.recorder.get_aux_img()
             # imageaux1 = self.bridge.imgmsg_to_cv2(self.recorder.ltob_aux1.img_msg)
             # imageaux1 = cv2.cvtColor(imageaux1, cv2.COLOR_BGR2RGB)
@@ -115,48 +131,42 @@ class Visual_MPC_Client():
         self.goal_pos_main = c_main.goal.astype(np.int32)
         print 'goal pos main:', self.goal_pos_main
 
-    def collect_goal_image(self):
+    def collect_goal_image(self, ind=0):
+        savedir = self.recording_dir + '/goalimage'
+        if not os.path.exists(savedir):
+            os.makedirs(savedir)
+        done = False
+        print("Press g to take goalimage!")
+        while not done and not rospy.is_shutdown():
+            c = intera_external_devices.getch()
+            if c:
+                # catch Esc or ctrl-c
+                if c in ['\x1b', '\x03']:
+                    done = True
+                    rospy.signal_shutdown("Example finished.")
+                if c == 'g':
+                    print 'taking goalimage'
 
-        # check if there is a checkpoint from which to resume
-        start_tr = 0
-        self.ctrl.set_neutral()
-        savedir = self.base_dir + '/goalimage'
+                    imagemain = self.recorder.ltob.img_cropped
 
-        for ind in range(start_tr, 10):
+                    cv2.imwrite( savedir+ "/goal_main{}.png".format(ind),
+                                imagemain, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT, 1])
+                    state = self.get_endeffector_pos()
+                    with open(savedir + '/goalim{}.pkl'.format(ind), 'wb') as f:
+                        cPickle.dump({'main': imagemain, 'state': state}, f)
+                    break
+                else:
+                    print 'wrong key!'
 
-            done = False
-            print("Controlling joints. Press ? for help, Esc to quit.")
-            while not done and not rospy.is_shutdown():
-                c = intera_external_devices.getch()
-                if c:
-                    # catch Esc or ctrl-c
-                    if c in ['\x1b', '\x03']:
-                        done = True
-                        rospy.signal_shutdown("Example finished.")
-                    if c == 'g':
-                        print 'taking goalimage'
+        print 'place object in different location!'
+        pdb.set_trace()
 
-
-                        imagemain = self.bridge.cv2_to_imgmsg(self.recorder.ltob.img_cropped)
-                        self.recorder.get_aux_img()
-                        imageaux1 = self.recorder.ltob_aux1.img_msg
-                        cv2.imwrite( + "/goal_main.png{}".format(ind),
-                                    imagemain, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT, 1])
-                        cv2.imwrite(savedir + "/goal_aux1.png{}".format(ind),
-                                    imageaux1, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT, 1])
-                        state = self.get_endeffector_pos()
-                        with open(savedir + '/goalim{}'.format(ind), 'wb') as f:
-                            cPickle.dump({'main': imagemain, 'aux1': imageaux1, 'state': state}, f)
-
-                        break
-                    else:
-                        print 'wrong key!'
 
     def load_goalimage(self, ind):
-        savedir = self.base_dir + '/goalimage'
-        with open(savedir + '/goalim{}'.format(ind), 'wb') as f:
+        savedir = self.recording_dir + '/goalimage'
+        with open(savedir + '/goalim{}.pkl'.format(ind), 'rb') as f:
             dict = cPickle.load(f)
-            return  dict['main'], dict['aux1']
+            return dict['main'], dict['state']
 
     def imp_ctrl_release_spring(self, maxstiff):
         self.imp_ctrl_release_spring_pub.publish(maxstiff)
@@ -217,16 +227,18 @@ class Visual_MPC_Client():
     def init_traj(self, itr):
         try:
             self.recorder.init_traj(itr)
-            rospy.wait_for_service('init_traj', timeout=240)
+            rospy.wait_for_service('init_traj', timeout=1)
             if self.use_goalimage:
-                goal_img_main, goal_img_aux1 = self.load_goalimage(itr)
+                goal_img_main, goal_state = self.load_goalimage(itr)
+                goal_img_aux1 = np.zeros([64, 64, 3])
             else:
                 goal_img_main = np.zeros([64, 64, 3])
                 goal_img_aux1 = np.zeros([64, 64, 3])
 
             goal_img_main = self.bridge.cv2_to_imgmsg(goal_img_main)
             goal_img_aux1 = self.bridge.cv2_to_imgmsg(goal_img_aux1)
-            resp1 = self.init_traj_visual_func(itr, 0, goal_img_main, goal_img_aux1)
+            rospy.wait_for_service('init_traj_visualmpc', timeout=1)
+            resp = self.init_traj_visual_func(itr, 0, goal_img_main, goal_img_aux1)
 
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
@@ -244,17 +256,18 @@ class Visual_MPC_Client():
             self.imp_ctrl_active.publish(1)
             rospy.sleep(.2)
 
-            self.init_traj(i_tr)
-
             self.ctrl.gripper.open()
             self.gripper_closed = False
             self.gripper_up = False
 
-            print 'place objects and press c and enter to continue!'
-            pdb.set_trace()
-            self.mark_goal_desig()
+            if self.use_goalimage:
+                self.collect_goal_image(i_tr)
+            else:
+                self.mark_goal_desig(i_tr)
 
-            self.lower_height = 0.21
+            self.init_traj(i_tr)
+
+            self.lower_height = 0.20
             self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
             self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
 
@@ -291,19 +304,18 @@ class Visual_MPC_Client():
             imageaux1 = self.recorder.ltob_aux1.img_msg
             state = self.get_endeffector_pos()
         else:
-            imagemain = np.zeros_like(self.test_img)
+            imagemain = np.zeros((64,64,3))
             imagemain = self.bridge.cv2_to_imgmsg(imagemain)
             imageaux1 = self.bridge.cv2_to_imgmsg(self.test_img)
             state = np.zeros(3)
         try:
             rospy.wait_for_service('get_action', timeout=240)
-            if not self.use_goalimage:
-                get_action_resp = self.get_action_func(imagemain, imageaux1,
-                                                  tuple(state),
-                                                  tuple(self.desig_pos_main),
-                                                  tuple(self.goal_pos_main))
+            get_action_resp = self.get_action_func(imagemain, imageaux1,
+                                              tuple(state),
+                                              tuple(self.desig_pos_main),
+                                              tuple(self.goal_pos_main))
 
-                action_vec = get_action_resp.action
+            action_vec = get_action_resp.action
 
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
