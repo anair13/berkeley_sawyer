@@ -47,8 +47,7 @@ class Visual_MPC_Client():
         # must be an uneven number
         self.action_sequence_length = 14 # number of snapshots that are taken
         self.use_robot = True
-        # self.base_dir = "/home/frederik/Documents/berkeley_sawyer/src/testbasedir"
-        self.base_dir = "/home/guser/catkin_ws/src/berkeley_sawyer/src/testbasedir"
+        self.base_dir = "/home/guser/catkin_ws/src/berkeley_sawyer/testimages/"
 
         if self.use_robot:
             self.ctrl = robot_controller.RobotController()
