@@ -199,7 +199,7 @@ class RobotRecorder(object):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
         try:
-            rospy.wait_for_service('init_traj', timeout=240)
+            rospy.wait_for_service('init_traj', timeout=1)
             resp1 = self.init_traj_func(itr, self.igrp)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
