@@ -304,21 +304,6 @@ class Primitive_Executor(object):
         return des_joint_angles
 
 
-    def calc_interpolation(self, previous_goalpoint, next_goalpoint, t_prev, t_next):
-        """
-        interpolate cartesian positions (x,y,z) between last goalpoint and previous goalpoint at the current time
-        :param previous_goalpoint:
-        :param next_goalpoint:
-        :param goto_point:
-        :param tnewpos:
-        :return: des_pos
-        """
-        assert (self.curr_delta_time >= t_prev) or (self.curr_delta_time <= t_next)
-        des_pos = previous_goalpoint + (next_goalpoint - previous_goalpoint) * (self.curr_delta_time- t_prev)/ (t_next - t_prev)
-        # print 'current_delta_time: ', self.curr_delta_time
-        # print "interpolated pos:", des_pos
-        return des_pos
-
     def goup(self):
         print "going up at the end.."
         delta_up = .1
@@ -590,43 +575,6 @@ class Primitive_Executor(object):
             self.control_rate.sleep()
             self.move_with_impedance(self.joint_pos[t])
 
-    # def redistribute_objects(self):
-        # """
-        # Loops playback of recorded joint position waypoints until program is
-        # exited
-        # """
-        # with open('/home/guser/catkin_ws/src/berkeley_sawyer/src/waypts.pkl', 'r') as f:
-        #     waypoints = cPickle.load(f)
-        # rospy.loginfo("Waypoint Playback Started")
-        #
-        # # Set joint position speed ratio for execution
-        # self.ctrl.limb.set_joint_position_speed(.2)
-        #
-        # # Loop until program is exited
-        # do_repeat = True
-        # n_repeat = 0
-        # # self.imp_ctrl_active.publish(0)
-        # while do_repeat and (n_repeat < 2):
-        #     do_repeat = False
-        #     n_repeat += 1
-        #     for i, waypoint in enumerate(waypoints):
-        #         if rospy.is_shutdown():
-        #             break
-        #         try:
-        #             print 'going to waypoint ', i
-        #
-        #             if self.imp_ctrl_active:
-        #                 if i < 2:
-        #                     self.imp_ctrl_release_spring(20)
-        #                 else:
-        #                     self.imp_ctrl_release_spring(50)
-        #                 self.move_with_impedance_sec(waypoint, tsec=.9)
-        #             else:
-        #                 self.ctrl.limb.move_to_joint_positions(waypoint, timeout=5.0)
-        #         except:
-        #             do_repeat = True
-        #             break
-        # # self.imp_ctrl_active.publish(1)
 
 def main():
     pexec = Primitive_Executor()

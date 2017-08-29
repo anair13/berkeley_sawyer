@@ -337,7 +337,6 @@ def start_parallel(source_dirs,tf_rec_dir, gif_dir, crop_from_highres= True, spl
     ray.init()
 
     n_traj = get_maxtraj(sourcedirs)
-
     n_worker = 10
     traj_per_worker = int(n_traj / np.float32(n_worker))
     start_idx = [traj_per_worker * i for i in range(n_worker)]
@@ -378,11 +377,11 @@ def start_parallel_multiprocessing(source_dirs,tf_rec_dir, gif_dir, crop_from_hi
 
 if __name__ == "__main__":
 
-    sourcedirs =["/media/frederik/harddrive/sawyerdata/softmotion_0506/main",
-                 "/media/frederik/harddrive/sawyerdata/softmotion_0506/aux1"]
+    sourcedirs =["/media/frederik/harddrive/sawyerdata/softmotion_0511/main",
+                 "/media/frederik/harddrive/sawyerdata/softmotion_0511/aux1"]
 
-    gif_dir = '/media/frederik/harddrive/sawyerdata/softmotion_0506/exampletraj'
-    tf_rec_dir = '/home/frederik/Documents/lsdc/pushing_data/softmotion30/'
+    gif_dir = '/media/frederik/harddrive/sawyerdata/softmotion_0511/exampletraj'
+    tf_rec_dir = '/media/frederik/harddrive/pushingdata/softmotion30_44k'
 
     parallel = True
 
@@ -390,7 +389,10 @@ if __name__ == "__main__":
         start_parallel(sourcedirs,tf_rec_dir, gif_dir,crop_from_highres= True, split_seq_by=1)
     else:
 
-        tfrec_converter = TF_rec_converter(sourcedirs,tf_rec_dir,
-                                           gif_dir,crop_from_highres= True,
-                                           split_seq_by=1, startidx=0, endidx=get_maxtraj(sourcedirs))
+        tfrec_converter = TF_rec_converter(sourcedirs,
+                                           tf_rec_dir,
+                                           gif_dir,
+                                           crop_from_highres= True,
+                                           split_seq_by=1, startidx=0,
+                                           endidx=get_maxtraj(sourcedirs))
         tfrec_converter.gather()
