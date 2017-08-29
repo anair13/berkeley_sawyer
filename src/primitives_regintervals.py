@@ -34,6 +34,8 @@ class Primitive_Executor(object):
         n_traj_per_run = 3
         self.act_every = 4
         self.duration = 25 #16  # duration of trajectory in seconds
+
+        self.use_wrist_rot = True
         self.state_sequence_length = seq_length*n_traj_per_run # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
@@ -41,7 +43,6 @@ class Primitive_Executor(object):
                                                      seq_len=self.state_sequence_length)
 
         self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
-
 
         self.imp_ctrl_publisher = rospy.Publisher('desired_joint_pos', JointState, queue_size=1)
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
@@ -397,8 +398,6 @@ class Primitive_Executor(object):
         posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2), np.zeros(1)))
         self.des_pos += posshift
         self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
-
-
 
         close_cmd = np.random.choice(range(5), p=[0.8, 0.05, 0.05, 0.05, 0.05])
         if close_cmd != 0:
