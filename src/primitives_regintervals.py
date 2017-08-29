@@ -304,21 +304,6 @@ class Primitive_Executor(object):
         return des_joint_angles
 
 
-    def calc_interpolation(self, previous_goalpoint, next_goalpoint, t_prev, t_next):
-        """
-        interpolate cartesian positions (x,y,z) between last goalpoint and previous goalpoint at the current time
-        :param previous_goalpoint:
-        :param next_goalpoint:
-        :param goto_point:
-        :param tnewpos:
-        :return: des_pos
-        """
-        assert (self.curr_delta_time >= t_prev) or (self.curr_delta_time <= t_next)
-        des_pos = previous_goalpoint + (next_goalpoint - previous_goalpoint) * (self.curr_delta_time- t_prev)/ (t_next - t_prev)
-        # print 'current_delta_time: ', self.curr_delta_time
-        # print "interpolated pos:", des_pos
-        return des_pos
-
     def goup(self):
         print "going up at the end.."
         delta_up = .1
