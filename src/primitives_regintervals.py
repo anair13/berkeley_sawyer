@@ -37,8 +37,8 @@ class Primitive_Executor(object):
         self.state_sequence_length = seq_length*n_traj_per_run # number of snapshots that are taken
 
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/newrecording",
-                                                     seq_len=self.state_sequence_length)
+        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/febert/Documents/sawyer_data/newrecording",
+                                                     seq_len=self.state_sequence_length, use_aux=False)
 
         self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
 
