@@ -575,43 +575,6 @@ class Primitive_Executor(object):
             self.control_rate.sleep()
             self.move_with_impedance(self.joint_pos[t])
 
-    # def redistribute_objects(self):
-        # """
-        # Loops playback of recorded joint position waypoints until program is
-        # exited
-        # """
-        # with open('/home/guser/catkin_ws/src/berkeley_sawyer/src/waypts.pkl', 'r') as f:
-        #     waypoints = cPickle.load(f)
-        # rospy.loginfo("Waypoint Playback Started")
-        #
-        # # Set joint position speed ratio for execution
-        # self.ctrl.limb.set_joint_position_speed(.2)
-        #
-        # # Loop until program is exited
-        # do_repeat = True
-        # n_repeat = 0
-        # # self.imp_ctrl_active.publish(0)
-        # while do_repeat and (n_repeat < 2):
-        #     do_repeat = False
-        #     n_repeat += 1
-        #     for i, waypoint in enumerate(waypoints):
-        #         if rospy.is_shutdown():
-        #             break
-        #         try:
-        #             print 'going to waypoint ', i
-        #
-        #             if self.imp_ctrl_active:
-        #                 if i < 2:
-        #                     self.imp_ctrl_release_spring(20)
-        #                 else:
-        #                     self.imp_ctrl_release_spring(50)
-        #                 self.move_with_impedance_sec(waypoint, tsec=.9)
-        #             else:
-        #                 self.ctrl.limb.move_to_joint_positions(waypoint, timeout=5.0)
-        #         except:
-        #             do_repeat = True
-        #             break
-        # # self.imp_ctrl_active.publish(1)
 
 def main():
     pexec = Primitive_Executor()
