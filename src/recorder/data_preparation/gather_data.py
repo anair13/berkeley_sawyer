@@ -101,20 +101,20 @@ class TF_rec_converter(object):
 
         print 'length trajname_ind_l', len(trajname_ind_l)
 
-        # ###
-        # print 'startind', self.startidx
-        # for i in range(10):
-        #     print trajname_ind_l[i]
-        #
-        # for i in range(10):
-        #     print trajname_ind_l[-i]
-        # print 'trajend, ', trajend
-        # print 'endind', self.endidx
-        #
-        # if len(trajname_ind_l) != len(set(trajname_ind_l)):
-        #     print 'list has duplicates'
-        # ###
-        # pdb.set_trace()
+        ###
+        print 'startind', self.startidx
+        for i in range(10):
+            print trajname_ind_l[i]
+
+        for i in range(10):
+            print trajname_ind_l[-i]
+        print 'trajend, ', trajend
+        print 'endind', self.endidx
+
+        if len(trajname_ind_l) != len(set(trajname_ind_l)):
+            print 'list has duplicates'
+        ###
+        pdb.set_trace()
 
         random.shuffle(trajname_ind_l)
 
@@ -288,10 +288,6 @@ class TF_rec_converter(object):
 
                 feature[str(tstep) + '/action']= _float_feature(traj.actions[tstep].tolist())
                 feature[str(tstep) + '/endeffector_pos'] = _float_feature(traj.endeffector_pos[tstep].tolist())
-                # feature[str(tstep) + '/jointangles'] = _float_feature(traj.joint_angles.tolist())
-
-                # feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 0].flatten().tolist())
-                # feature[str(tstep) + '/depth_main'] = _float_feature(traj.dvalues[tstep, 1].flatten().tolist())
 
                 image_raw = traj.images[tstep, 0].tostring()  # for camera 0, i.e. main
                 feature[str(tstep) + '/image_main/encoded'] = _bytes_feature(image_raw)

@@ -24,6 +24,7 @@ from rospy_tutorials.msg import Floats
 from rospy.numpy_msg import numpy_msg
 
 import intera_interface
+import argparse
 
 class Pushback_Recorder(object):
     def __init__(self, file = None):
@@ -33,14 +34,18 @@ class Pushback_Recorder(object):
         """
 
         print("Initializing node... ")
-        rospy.init_node("sawyer_custom_controller")
+        rospy.init_node("pushback_recorder")
+
+        parser = argparse.ArgumentParser(description='select whehter to record or replay')
+        parser.add_argument('--record', type=str, default='True', help='')
+
+        args = parser.parse_args()
 
         self.rs = intera_interface.RobotEnable(CHECK_VERSION)
         self.init_state = self.rs.state().enabled
 
         self.limb = intera_interface.Limb("right")
         self.gripper = intera_interface.Gripper("right")
-        self.joint_names = self.limb.joint_names()
 
         self.gripper = intera_interface.Gripper("right")
 
@@ -62,9 +67,13 @@ class Pushback_Recorder(object):
         rospy.on_shutdown(self.clean_shutdown)
         self.joint_pos = []
 
-        if file != None:
+        if args.record == 'False':
             self.playback(file)
-        rospy.spin()
+        if args.record == 'True':
+            print 'ready for recording!'
+            rospy.spin()
+
+        raise ValueError('wrong argument!')
 
     def imp_ctrl_release_spring(self, maxstiff):
         self.imp_ctrl_release_spring_pub.publish(maxstiff)
@@ -82,7 +91,8 @@ class Pushback_Recorder(object):
     def stop_recording(self, data):
         print 'stopped recording'
         self.collect_active = False
-        self.playback()
+        # self.playback()
+        self.clean_shutdown()
 
 
     def start_recording(self, data):
@@ -98,15 +108,13 @@ class Pushback_Recorder(object):
             self.joint_pos.append(self.limb.joint_angles())
             print 'recording ', len(self.joint_pos)
 
-        dir = '/home/guser/catkin_ws/src/berkeley_sawyer/src/utility'
-        with open(dir + '/pushback_traj_.pkl', 'wb') as f:
+        filename = '/home/febert/Documents/catkin_ws/src/berkeley_sawyer/src/utility/pushback_traj_.pkl'
+        with open(filename, 'wb') as f:
             cPickle.dump(self.joint_pos, f)
 
-        print 'saved file to ', dir + '/pushback_traj_.pkl'
-
+        print 'saved file to ', filename
 
     def playback(self, file = None):
-
 
         pdb.set_trace()
         self.joint_pos = cPickle.load(open(file, "rb"))
@@ -116,9 +124,10 @@ class Pushback_Recorder(object):
         self.imp_ctrl_release_spring(100)
         self.imp_ctrl_active.publish(1)
 
+        replayrate = rospy.Rate(500)
         for t in range(len(self.joint_pos)):
             print 'step {0} joints: {1}'.format(t, self.joint_pos[t])
-            self.control_rate.sleep()
+            replayrate.sleep()
             self.move_with_impedance(self.joint_pos[t])
 
     def clean_shutdown(self):
@@ -133,6 +142,5 @@ class Pushback_Recorder(object):
 
 
 if __name__ == '__main__':
-    # P = Pushback_Recorder('/home/guser/catkin_ws/src/berkeley_sawyer/src/utility/pushback_traj_.pkl')  # playback file
-    P = Pushback_Recorder() # record new
+    P = Pushback_Recorder('/home/febert/Documents/catkin_ws/src/berkeley_sawyer/src/utility/pushback_traj_.pkl')  # playback file
 

@@ -16,11 +16,10 @@ import rospy
 from sensor_msgs.msg import JointState
 
 import socket
-if socket.gethostname() == 'kullback':
-    from intera_core_msgs.srv import (
-        SolvePositionIK,
-        SolvePositionIKRequest,
-    )
+from intera_core_msgs.srv import (
+    SolvePositionIK,
+    SolvePositionIKRequest,
+)
 
 def get_joint_angles(pose, seed_cmd = None, use_advanced_options = False):
     limb = "right"
@@ -151,12 +150,20 @@ LEFTWARD_DIAG = Quaternion(
     w=-0.707,
 )
 
-EXAMPLE_O = Quaternion(
-    x=0.704020578925,
-    y=0.710172716916,
-    z=0.00244101361829,
-    w=0.00194372088834,
+
+EXAMPLE_O = Quaternion(  # downward and turn a little
+    x=0.707,
+    y=0.707,
+    z=0.0,
+    w=0.0,
 )
+
+# EXAMPLE_O = Quaternion(
+#     x=0.704020578925,
+#     y=0.710172716916,
+#     z=0.00244101361829,
+#     w=0.00194372088834,
+# )
 
 def main():
     rospy.init_node("inverse_kinematics_test")

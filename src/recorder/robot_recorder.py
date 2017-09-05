@@ -16,6 +16,8 @@ from PIL import Image
 import cPickle
 import imageio
 
+import argparse
+
 import moviepy.editor as mpy
 
 from rospy_tutorials.msg import Floats
@@ -54,6 +56,10 @@ class RobotRecorder(object):
         :param whether the recorder instance is an auxiliary recorder
         """
 
+        parser = argparse.ArgumentParser(description='Run benchmarks')
+        parser.add_argument('--useaux', default='False', type=str, help='whether to use a second kinect')
+        args= parser.parse_args()
+
         side = "right"
         self.state_sequence_length = seq_len
         self.overwrite = True
@@ -68,15 +74,14 @@ class RobotRecorder(object):
         self.itr = 0
         self.highres_imglist = []
 
-        print 'hostname is :{}'.format(socket.gethostname())
-        if socket.gethostname() == 'kullback':
+        if args.useaux == "False":
             # the main instance one also records actions and joint angles
             self.instance_type = 'main'
             self._gripper = None
             self.gripper_name = '_'.join([side, 'gripper'])
             import intera_interface
             self._limb_right = intera_interface.Limb(side)
-        elif socket.gethostname() == 'kinectbox1':
+        elif args.useaux == "True":
             # auxiliary recorder
             rospy.init_node('aux_recorder1')
             rospy.loginfo("init node aux_recorder1")
@@ -102,8 +107,7 @@ class RobotRecorder(object):
         self.t_finish_save = []
 
         # if it is an auxiliary node advertise services
-        if socket.gethostname() == 'kinectbox1':
-
+        if self.instance_type == 'aux1':
 
             # initializing the server:
             rospy.Service('save_kinectdata', save_kinectdata, self.save_kinect_handler)
@@ -113,7 +117,7 @@ class RobotRecorder(object):
 
             self.t_get_request = []
             rospy.spin()
-        elif socket.gethostname() == 'kullback':
+        elif self.instance_type == 'main':
             # initializing the client:
             self.get_kinectdata_func = rospy.ServiceProxy('get_kinectdata', get_kinectdata)
             self.save_kinectdata_func = rospy.ServiceProxy('save_kinectdata', save_kinectdata)
@@ -225,7 +229,6 @@ class RobotRecorder(object):
         assert img.shape == (64,64,3)
         return img
 
-
     def init_traj(self, itr):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
@@ -242,10 +245,10 @@ class RobotRecorder(object):
         if ((itr+1) % self.ngroup) == 0:
             self.igrp += 1
 
+
     def _init_traj_local(self, itr):
         """
         :param itr: number of current trajecotry
-        :return:
         """
         self.itr = itr
         self.group_folder = self.save_dir + '/traj_group{}'.format(self.igrp)
@@ -270,13 +273,9 @@ class RobotRecorder(object):
         if self.instance_type == 'main':
             self.state_action_data_file = traj_folder + '/joint_angles_traj{}.txt'.format(itr)
             self.state_action_pkl_file = traj_folder + '/joint_angles_traj{}.pkl'.format(itr)
-            joints_right = self._limb_right.joint_names()
             with open(self.state_action_data_file, 'w+') as f:
-                f.write('time,')
-                action_names = ['move','val_move_x','val_move_y','close','val_close','up','val_up']
-                captions = joints_right + action_names
+                captions = ['save_ind','rostime','posshiftx','posshift_y','up_for_steps','rotate','close_for_steps']
                 f.write(','.join(captions) + ',' + '\n')
-
 
     def delete_traj(self, tr):
         assert self.instance_type == 'main'
@@ -323,7 +322,7 @@ class RobotRecorder(object):
         # clip = mpy.ImageSequenceClip(self.highres_imglist, fps=10)
         # clip.write_gif(self.image_folder + '/highres_traj{}.mp4'.format(self.itr))
         writer = imageio.get_writer(self.image_folder + '/highres_traj{}.mp4'.format(self.itr), fps=10)
-        print 'shape highes:', self.highres_imglist[0].shape
+        print 'shape highres:', self.highres_imglist[0].shape
         for im in self.highres_imglist:
             writer.append_data(im)
         writer.close()
@@ -346,10 +345,8 @@ class RobotRecorder(object):
             f.write("%f," % (i_save))
             f.write("%i," % (rospy.get_time(),))
 
-            # values = np.concatenate([angles_right, action])
             # only writing actions to text file
-            values = action
-            f.write(','.join([str(x) for x in values]) + '\n')
+            f.write(','.join([str(x) for x in action]) + '\n')
 
         self.joint_angle_list.append(angles_right)
         self.action_list.append(action)
@@ -378,7 +375,7 @@ class RobotRecorder(object):
         # saving the full resolution image
         if self.ltob.img_cv2 is not None:
             image_name = self.image_folder+ "/" + pref + "_full_cropped_im{0}".format(str(i_save).zfill(2))
-            image_name += "_time{1}.jpg".format(self.ltob.tstamp_img)
+            image_name += "_time{}.jpg".format(self.ltob.tstamp_img)
 
             cv2.imwrite(image_name, self.ltob.img_cv2, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
         else:
@@ -388,7 +385,6 @@ class RobotRecorder(object):
         if self.ltob.img_cropped is not None:
             image_name = self.image_folder + "/" + pref +"_cropped_im{0}_time{1}.png".format(i_save, self.ltob.tstamp_img)
             cv2.imwrite(image_name, self.ltob.img_cropped, [cv2.IMWRITE_PNG_STRATEGY_DEFAULT,1])
-            print 'saving small image to ', image_name
         else:
             raise ValueError('img_cropped no data received')
 

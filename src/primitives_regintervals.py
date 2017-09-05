@@ -7,6 +7,15 @@ from intera_core_msgs.srv import (
     SolvePositionFK,
     SolvePositionFKRequest,
 )
+
+from geometry_msgs.msg import (
+    PoseStamped,
+    PointStamped,
+    Pose,
+    Point,
+    Quaternion,
+)
+
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
@@ -33,14 +42,17 @@ class Primitive_Executor(object):
         seq_length = 32
         n_traj_per_run = 3
         self.act_every = 4
-        self.duration = 25 #16  # duration of trajectory in seconds
+        self.duration = 18 #16  # duration of trajectory in seconds
 
-        self.use_wrist_rot = True
         self.state_sequence_length = seq_length*n_traj_per_run # number of snapshots that are taken
 
+        action_frequency = float(float(self.state_sequence_length)/float(self.duration)/float(self.act_every))
+        print 'using action frequency of {}Hz'.format(action_frequency)
+        print 'time between actions:', 1 / action_frequency
+
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/guser/sawyer_data/newrecording",
-                                                     seq_len=self.state_sequence_length)
+        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/febert/Documents/sawyer_data/newrecording",
+                                                     seq_len=self.state_sequence_length, use_aux=False)
 
         self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
 
@@ -48,17 +60,17 @@ class Primitive_Executor(object):
         self.imp_ctrl_release_spring_pub = rospy.Publisher('release_spring', Float32, queue_size=10)
         self.imp_ctrl_active = rospy.Publisher('imp_ctrl_active', Int64, queue_size=10)
 
+        self.control_rate = rospy.Rate(1000)
+
         rospy.sleep(1)
         # drive to neutral position:
-        self.imp_ctrl_active.publish(0)
-        self.ctrl.set_neutral()
-        self.set_neutral_with_impedance()
-        self.imp_ctrl_active.publish(1)
+        self.set_neutral_with_impedance(duration=3)
+
         rospy.sleep(1)
 
         limb = 'right'
-        self.name_of_service = "ExternalTools/" + limb + "/PositionKinematicsNode/FKService"
-        self.fksvc = rospy.ServiceProxy(self.name_of_service, SolvePositionFK)
+        self.name_fksrv = "ExternalTools/" + limb + "/PositionKinematicsNode/FKService"
+        self.fksvc = rospy.ServiceProxy(self.name_fksrv, SolvePositionFK)
 
         self.topen, self.t_down = None, None
 
@@ -66,9 +78,12 @@ class Primitive_Executor(object):
         self.robot_move = True
         self.save_active = True
         self.interpolate = True
+        self.enable_rot = True
+
         self.checkpoint_file = os.path.join(self.recorder.save_dir, 'checkpoint.txt')
 
-        self.control_rate = rospy.Rate(1000)
+        print 'press c to start data collection..'
+        pdb.set_trace()
         self.run_data_collection()
 
 
@@ -88,6 +103,7 @@ class Primitive_Executor(object):
             start_tr = 0
 
         accum_time = 0
+        nfail_traj = 0  #count number of failed trajectories within accum_time
         for tr in range(start_tr, self.num_traj):
 
             tstart = datetime.now()
@@ -99,8 +115,9 @@ class Primitive_Executor(object):
                     done = True
                 except Traj_aborted_except:
                     self.recorder.delete_traj(tr)
+                    nfail_traj +=1
 
-            if ((tr+1)% 1) == 0:  ##############
+            if ((tr+1)% 20) == 0:
                 self.redistribute_objects()
 
             delta = datetime.now() - tstart
@@ -110,8 +127,9 @@ class Primitive_Executor(object):
             avg_nstep = 80
             if ((tr+1)% avg_nstep) == 0:
                 average = accum_time/avg_nstep
-                self.write_timing_file(average)
+                self.write_timing_file(average, avg_nstep, nfail_traj)
                 accum_time = 0
+                nfail_traj = 0
 
             self.write_ckpt(tr, self.recorder.igrp)
             self.alive_publisher.publish('still alive!')
@@ -122,10 +140,11 @@ class Primitive_Executor(object):
             f.write("last trajectory, current group%f \n")
             f.write("{} {} \n".format(tr, i_grp))
 
-    def write_timing_file(self, avg):
+    def write_timing_file(self, avg, avg_nstep, nfail_traj):
         with open(os.path.join(self.recorder.save_dir, 'timingfile.txt'), 'w') as f:
             f.write("average duration for trajectory (including amortization of redistribution trajectory): {} \n".format(avg))
             f.write("expected number of trajectory per day: {} \n".format(24.*3600./avg))
+            f.write("number of failed trajectories within {} trials: {}\n".format(avg_nstep, nfail_traj))
 
 
     def parse_ckpt(self):
@@ -155,7 +174,7 @@ class Primitive_Executor(object):
         fkreq.configuration.append(joints)
         fkreq.tip_names.append('right_hand')
         try:
-            rospy.wait_for_service(self.name_of_service, 5)
+            rospy.wait_for_service(self.name_fksrv, 5)
             resp = self.fksvc(fkreq)
         except (rospy.ServiceException, rospy.ROSException), e:
             rospy.logerr("Service call failed: %s" % (e,))
@@ -163,13 +182,42 @@ class Primitive_Executor(object):
 
         pos = np.array([resp.pose_stamp[0].pose.position.x,
                          resp.pose_stamp[0].pose.position.y,
-                         resp.pose_stamp[0].pose.position.z])
-        return pos
+                         resp.pose_stamp[0].pose.position.z,
+                         ])
+
+        if pos_only:
+            return pos
+        else:
+            quat = np.array([resp.pose_stamp[0].pose.orientation.x,
+                             resp.pose_stamp[0].pose.orientation.y,
+                             resp.pose_stamp[0].pose.orientation.z,
+                             resp.pose_stamp[0].pose.orientation.w
+                             ])
+
+            zangle = self.quat_to_zangle(quat)
+            return np.concatenate([pos, zangle])
+
+    def quat_to_zangle(self, quat):
+        """
+        :param quat: quaternion with only
+        :return: zangle in rad
+        """
+        phi = np.arctan2(2*(quat[0]*quat[1] + quat[2]*quat[3]), 1 - 2 *(quat[1]**2 + quat[2]**2))
+        return np.array([phi])
+
+    def zangle_to_quat(self, zangle):
+        quat = Quaternion(  # downward and turn a little
+            x=np.cos(zangle / 2),
+            y=np.sin(zangle / 2),
+            z=0.0,
+            w=0.0
+        )
+
+        return  quat
 
     def run_trajectory(self, i_tr):
 
-        # self.ctrl.set_neutral(speed= 0.3) ########################
-        self.set_neutral_with_impedance()
+        self.set_neutral_with_impedance(duration=0.8)
 
         self.ctrl.gripper.open()
         self.gripper_closed = False
@@ -177,12 +225,18 @@ class Primitive_Executor(object):
         if self.save_active:
             self.recorder.init_traj(i_tr)
 
-        self.lower_height = 0.20
+        self.lower_height = 0.18
+        self.delta_up = 0.12
         self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
         self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
 
-        startpos = np.array([np.random.uniform(self.xlim[0], self.xlim[1]), np.random.uniform(self.ylim[0], self.ylim[1])])
-        self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height])], axis=0)
+        startpos = np.array(
+            [np.random.uniform(self.xlim[0], self.xlim[1]), np.random.uniform(self.ylim[0], self.ylim[1])])
+        if self.enable_rot:
+            start_angle = np.array([np.random.uniform(0., np.pi * 2)])
+            self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height]), start_angle], axis=0)
+        else:
+            self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height])], axis=0)
 
         self.topen, self.t_down = 0, 0
 
@@ -195,10 +249,11 @@ class Primitive_Executor(object):
         print 'finish_time', finish_time
 
         tsave = np.linspace(0, self.duration, self.state_sequence_length)
-        print 'save times', tsave
+
+        # print 'save times', tsave
 
         tact = tsave[::self.act_every]
-        print 'cmd new pos times ', tact
+        # print 'cmd new pos times ', tact
 
         i_act = 0  # index of current commanded point
         i_save = 0  # index of current saved step
@@ -212,16 +267,12 @@ class Primitive_Executor(object):
 
             if i_act < len(tact):
                 if self.curr_delta_time > tact[i_act]:
-                    print 'current position error', self.des_pos - self.get_endeffector_pos(pos_only=True)
+                    print 'current position error', self.des_pos[:3] - self.get_endeffector_pos(pos_only=True)
 
-                    if self.interpolate:
-                        self.previous_des_pos = copy.deepcopy(self.des_pos)
-                        action_vec = self.act_joint(i_act)  # after completing trajectory save final state
-                        print 'prev_desired pos in step {0}: {1}'.format(i_act, self.previous_des_pos)
-                        print 'new desired pos in step {0}: {1}'.format(i_act, self.des_pos)
-
-                    else:
-                        action_vec, des_joint_angles = self.act_joint(i_act)  # after completing trajectory save final state
+                    self.previous_des_pos = copy.deepcopy(self.des_pos)
+                    action_vec = self.act_joint(i_act)  # after completing trajectory save final state
+                    print 'prev_desired pos in step {0}: {1}'.format(i_act, self.previous_des_pos)
+                    print 'new desired pos in step {0}: {1}'.format(i_act, self.des_pos)
                     print 'action vec', action_vec
                     self.t_prev = tact[i_act]
                     if i_act == len(tact)-1:
@@ -232,7 +283,6 @@ class Primitive_Executor(object):
 
             if self.interpolate:
                 des_joint_angles = self.get_interpolated_joint_angles()
-
             try:
                 if self.robot_move:
                     if self.use_imp_ctrl:
@@ -250,11 +300,9 @@ class Primitive_Executor(object):
                 raise Traj_aborted_except('raising Traj_aborted_except')
 
             if self.curr_delta_time > tsave[i_save]:
-
-                print 'saving index{}'.format(i_save)
-
+                # print 'saving index{}'.format(i_save)
                 if self.save_active:
-                    self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
+                    self.recorder.save(i_save, action_vec, self.get_endeffector_pos(pos_only=False))
                 i_save += 1
 
 
@@ -262,7 +310,7 @@ class Primitive_Executor(object):
 
         #saving the final state:
         if self.save_active:
-            self.recorder.save(i_save, action_vec, self.get_endeffector_pos())
+            self.recorder.save(i_save, action_vec, self.get_endeffector_pos(pos_only=False))
 
         if i_save != (self.state_sequence_length -1):
             raise Traj_aborted_except('trajectory not complete!')
@@ -286,11 +334,9 @@ class Primitive_Executor(object):
 
     def get_interpolated_joint_angles(self):
         int_des_pos = self.calc_interpolation(self.previous_des_pos, self.des_pos, self.t_prev, self.t_next)
-        print 'interpolated: ', int_des_pos
-        desired_pose = inverse_kinematics.get_pose_stamped(int_des_pos[0],
-                                                           int_des_pos[1],
-                                                           int_des_pos[2],
-                                                           inverse_kinematics.EXAMPLE_O)
+        # print 'interpolated: ', int_des_pos
+
+        desired_pose = self.get_des_pose(int_des_pos)
         start_joints = self.ctrl.limb.joint_angles()
         try:
             des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
@@ -307,12 +353,8 @@ class Primitive_Executor(object):
 
     def goup(self):
         print "going up at the end.."
-        delta_up = .1
-        self.des_pos[2] = self.lower_height + delta_up
-        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
-                                                           self.des_pos[1],
-                                                           self.des_pos[2],
-                                                           inverse_kinematics.EXAMPLE_O)
+        self.des_pos[2] = self.lower_height + self.delta_up
+        desired_pose = self.get_des_pose(self.des_pos)
         start_joints = self.ctrl.limb.joint_angles()
         try:
             des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
@@ -323,8 +365,8 @@ class Primitive_Executor(object):
             current_joints = self.ctrl.limb.joint_angles()
             self.ctrl.limb.set_joint_positions(current_joints)
             raise Traj_aborted_except('raising Traj_aborted_except')
-        self.imp_ctrl_release_spring(150)
-        self.move_with_impedance_sec(des_joint_angles, tsec=.5)
+        self.imp_ctrl_release_spring(50)
+        self.move_with_impedance_sec(des_joint_angles, duration=.5)
 
     def imp_ctrl_release_spring(self, maxstiff):
         self.imp_ctrl_release_spring_pub.publish(maxstiff)
@@ -338,28 +380,30 @@ class Primitive_Executor(object):
         js.position = [des_joint_angles[n] for n in js.name]
         self.imp_ctrl_publisher.publish(js)
 
-    def move_with_impedance_sec(self, cmd, tsec = 1.5):
-        """
-        blocking
-        """
-        tstart = rospy.get_time()
-        delta_t = 0
-        while delta_t < tsec:
-            delta_t = rospy.get_time() - tstart
+    def move_with_impedance_sec(self, cmd, duration=2.):
+        jointnames = self.ctrl.limb.joint_names()
+        prev_joint = [self.ctrl.limb.joint_angle(j) for j in jointnames]
+        new_joint = np.array([cmd[j] for j in jointnames])
+
+        start_time = rospy.get_time()  # in seconds
+        finish_time = start_time + duration  # in seconds
+
+        self.imp_ctrl_release_spring(50)
+        while rospy.get_time() < finish_time:
+            int_joints = prev_joint + (rospy.get_time()-start_time)/(finish_time-start_time)*(new_joint-prev_joint)
+            # print int_joints
+            cmd = dict(zip(self.ctrl.limb.joint_names(), list(int_joints)))
             self.move_with_impedance(cmd)
+            self.control_rate.sleep()
 
-    def set_neutral_with_impedance(self):
-        neutral_jointangles = [0.412271, -0.434908, -1.198768, 1.795462, 1.160788, 1.107675, 2.068076]
-        cmd = dict(zip(self.ctrl.limb.joint_names(), neutral_jointangles))
-        self.imp_ctrl_release_spring(20)
-        self.move_with_impedance_sec(cmd)
-
+    def set_neutral_with_impedance(self, duration= 1.5):
+        neutral_config = np.array([0.412271, -0.434908, -1.198768, 1.795462, 1.160788, 1.107675, 2.068076])
+        cmd = dict(zip(self.ctrl.limb.joint_names(), list(neutral_config)))
+        self.move_with_impedance_sec(cmd, duration=duration)
 
     def move_to_startpos(self):
-        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
-                                                           self.des_pos[1],
-                                                           self.des_pos[2],
-                                                           inverse_kinematics.EXAMPLE_O)
+
+        desired_pose = self.get_des_pose(self.des_pos)
         start_joints = self.ctrl.limb.joint_angles()
         try:
             des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
@@ -374,7 +418,7 @@ class Primitive_Executor(object):
             if self.robot_move:
                 if self.use_imp_ctrl:
                     self.imp_ctrl_release_spring(20)
-                    self.move_with_impedance_sec(des_joint_angles)
+                    self.move_with_impedance_sec(des_joint_angles, duration=1.0)
                 else:
                     self.ctrl.limb.move_to_joint_positions(des_joint_angles)
         except OSError:
@@ -393,9 +437,17 @@ class Primitive_Executor(object):
         :param i_act:
         :return:
         """
-
         maxshift = .1
-        posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2), np.zeros(1)))
+        maxrot = np.pi/4
+        if self.enable_rot:
+            # posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2), np.zeros(1), np.array([np.pi/8.])), axis=0)
+            posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2), np.zeros(1),
+                                       np.random.uniform(-maxrot, maxrot, 1)),
+                                      axis=0)
+        else:
+            posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2),
+                                       np.zeros(1)))
+
         self.des_pos += posshift
         self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
 
@@ -405,12 +457,10 @@ class Primitive_Executor(object):
             self.ctrl.gripper.close()
             self.gripper_closed = True
 
-
         up_cmd = np.random.choice(range(5), p=[0.9, 0.025, 0.025, 0.025, 0.025])
-        delta_up = .1
         if up_cmd != 0:
             self.t_down = i_act + up_cmd
-            self.des_pos[2] = self.lower_height + delta_up
+            self.des_pos[2] = self.lower_height + self.delta_up
             self.gripper_up = True
             print 'going up'
 
@@ -421,127 +471,34 @@ class Primitive_Executor(object):
                 print 'opening gripper'
                 self.gripper_closed = False
 
-        go_down = False
         if self.gripper_up:
             if i_act == self.t_down:
                 self.des_pos[2] = self.lower_height
                 print 'going down'
                 self.gripper_up = False
-                go_down = True
 
-        # if go_down:
-        #     self.imp_ctrl_release_spring(20.)
-        # else:
+
         self.imp_ctrl_release_spring(100.)
+        action_vec = np.concatenate([np.array([posshift[0]]),  # movement in plane
+                                     np.array([posshift[1]]),  # movement in plane
+                                     np.array([up_cmd]),
+                                     np.array([posshift[3]]),
+                                     np.array([close_cmd])])
+        return action_vec
 
-        action_vec = np.array([
-                               posshift[0],
-                               posshift[1],
-                               close_cmd,
-                               up_cmd
-                               ])
+    def get_des_pose(self, des_pos):
 
-        if self.interpolate:
-            return action_vec
+        if self.enable_rot:
+            quat = self.zangle_to_quat(des_pos[3])
         else:
-            desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
-                                                               self.des_pos[1],
-                                                               self.des_pos[2],
-                                                               inverse_kinematics.EXAMPLE_O)
-            start_joints = self.ctrl.limb.joint_angles()
-            try:
-                des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
-                                                          use_advanced_options=True)
-            except ValueError:
-                rospy.logerr('no inverse kinematics solution found, '
-                             'going to reset robot...')
-                current_joints = self.ctrl.limb.joint_angles()
-                self.ctrl.limb.set_joint_positions(current_joints)
-                raise Traj_aborted_except('raising Traj_aborted_except')
+            quat = inverse_kinematics.EXAMPLE_O
 
-            return action_vec, des_joint_angles
+        desired_pose = inverse_kinematics.get_pose_stamped(des_pos[0],
+                                                           des_pos[1],
+                                                           des_pos[2],
+                                                           quat)
+        return desired_pose
 
-    def act_distinct(self, i_act):
-        """
-        only perfom one action at a time
-        :param i_act:
-        :return:
-        """
-
-        # sample action type:
-        noptions = 3
-
-        action = np.random.choice(range(noptions), p=[0.70, 0.2, 0.1])
-
-        print 'action: ', i_act
-        if action == 0:
-            maxshift = .07
-            posshift = np.concatenate((np.random.uniform(-maxshift, maxshift, 2), np.zeros(1)))
-            self.des_pos += posshift
-            self.des_pos = self.truncate_pos(self.des_pos)  # make sure not outside defined region
-            print 'move to ', self.des_pos
-
-            self.imp_ctrl_release_spring(150.)
-        else:
-            posshift = np.zeros(2)
-
-        if action == 1:  # close gripper and hold for n steps
-            close_cmd = np.random.randint(3, 5)
-            print 'close and hold for ', close_cmd
-            self.topen = i_act + close_cmd
-            self.ctrl.gripper.close()
-            self.gripper_closed = True
-            self.imp_ctrl_release_spring(150.)
-        else:
-            close_cmd = 0
-
-        if action == 2:  # go up for n steps
-            up_cmd = np.random.randint(3, 5)
-            self.t_down = i_act + up_cmd
-            delta_up = .1
-            self.des_pos[2] = self.lower_height + delta_up
-            self.gripper_up = True
-            print 'stay up for ', up_cmd
-            self.imp_ctrl_release_spring(150)
-        else:
-            up_cmd = 0
-
-        if self.gripper_closed:
-            if i_act == self.topen:
-                self.ctrl.gripper.open()
-                print 'opening gripper'
-                self.gripper_closed = False
-
-        if self.gripper_up:
-            if i_act == self.t_down:
-                self.des_pos[2] = self.lower_height
-                print 'going down'
-                self.imp_ctrl_release_spring(80.)
-                self.gripper_up = False
-
-
-        action_vec = np.array([
-                               posshift[0],
-                               posshift[1],
-                               close_cmd,
-                               up_cmd
-                               ])
-        desired_pose = inverse_kinematics.get_pose_stamped(self.des_pos[0],
-                                                           self.des_pos[1],
-                                                           self.des_pos[2],
-                                                           inverse_kinematics.EXAMPLE_O)
-        start_joints = self.ctrl.limb.joint_angles()
-        try:
-            des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
-                                                      use_advanced_options=True)
-        except ValueError:
-            rospy.logerr('no inverse kinematics solution found, '
-                         'going to reset robot...')
-            current_joints = self.ctrl.limb.joint_angles()
-            self.ctrl.limb.set_joint_positions(current_joints)
-            raise Traj_aborted_except('raising Traj_aborted_except')
-
-        return action_vec, des_joint_angles
 
     def truncate_pos(self, pos):
 
@@ -557,23 +514,27 @@ class Primitive_Executor(object):
         if pos[1] < ylim[0]:
             pos[1] = ylim[0]
 
+        alpha_min = -0.78539
+        alpha_max = np.pi
+        pos[3] = np.clip(pos[3], alpha_min, alpha_max)
+
         return  pos
 
-    def redistribute_objects(self, file=None):
+    def redistribute_objects(self):
+        self.set_neutral_with_impedance(duration=1.5)
+        print 'redistribute...'
 
-        file = '/home/guser/catkin_ws/src/berkeley_sawyer/src/utility/pushback_traj_.pkl'
-
-        pdb.set_trace()
+        file = '/home/febert/Documents/catkin_ws/src/berkeley_sawyer/src/utility/pushback_traj_.pkl'
         self.joint_pos = cPickle.load(open(file, "rb"))
 
         self.imp_ctrl_release_spring(100)
         self.imp_ctrl_active.publish(1)
 
+        replay_rate = rospy.Rate(950)
         for t in range(len(self.joint_pos)):
             print 'step {0} joints: {1}'.format(t, self.joint_pos[t])
-            self.control_rate.sleep()
+            replay_rate.sleep()
             self.move_with_impedance(self.joint_pos[t])
-
 
 def main():
     pexec = Primitive_Executor()
