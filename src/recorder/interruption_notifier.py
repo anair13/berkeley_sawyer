@@ -16,7 +16,7 @@ class Interruption_notifier(object):
     def spin_thread(self):
         while True:
             tdelta = rospy.get_time() - self.last_alive
-            if tdelta > 300:
+            if tdelta > 60*20:
                 print 'sending notification mail...'
                 self.send_mail()
                 return

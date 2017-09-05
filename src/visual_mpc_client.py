@@ -6,12 +6,11 @@ import rospy
 import matplotlib.pyplot as plt
 
 import socket
-if socket.gethostname() == 'kullback':
-    from intera_core_msgs.srv import (
-        SolvePositionFK,
-        SolvePositionFKRequest,
-    )
-    import intera_external_devices
+from intera_core_msgs.srv import (
+    SolvePositionFK,
+    SolvePositionFKRequest,
+)
+import intera_external_devices
 
 import argparse
 import imutils
@@ -45,7 +44,6 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-from lsdc import __file__ as lsdc_filepath
 
 class Visual_MPC_Client():
     def __init__(self):
