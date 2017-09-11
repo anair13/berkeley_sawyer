@@ -40,7 +40,7 @@ class Primitive_Executor(object):
 
         # must be an uneven number
         seq_length = 32
-        n_traj_per_run = 3
+        n_traj_per_run = 3   # corresponds to
         self.act_every = 4
         self.duration = 18 #16  # duration of trajectory in seconds
 

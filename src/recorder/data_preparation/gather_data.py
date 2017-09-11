@@ -24,18 +24,29 @@ import ray
 import create_gif
 
 class Trajectory(object):
-    def __init__(self, cameranames, split_seq_by = 1):
-        self.cameranames = cameranames
-        self.T = 30/split_seq_by
-        self.n_cam = len(cameranames)
+    def __init__(self):
+
+        total_num_img = 96 #the actual number of images in the trajectory (for softmotion total_num_img=30)
+        self.take_ev_nth_step = 2 #only use every n-step from the data (for softmotion take_ev_nth_step=1)
+        split_seq_by = 1  #if greater than 1 split trajectory in n equal parts
+
+        self.npictures = total_num_img/split_seq_by  #number of images after splitting (include images we use and not use)
+
+        self.cameranames = ['main']
+        self.n_cam = len(self.cameranames)  # number of cameras
+
+        self.T = total_num_img / split_seq_by / self.take_ev_nth_step  # the number of timesteps in final trajectory
         self.images = np.zeros((self.T, self.n_cam, 64, 64, 3), dtype = np.uint8)  # n_cam=0: main, n_cam=1: aux1
         self.dimages = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.uint8)
         self.dvalues = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.float32)
-        self.actions = np.zeros((self.T, 4), dtype = np.float32)
-        self.endeffector_pos = np.zeros((self.T, 3), dtype = np.float32)
+
+        action_dim = 5  # (for softmotion action_dim=4)
+        state_dim = 4  # (for softmotion action_dim=4)
+        self.actions = np.zeros((self.T, action_dim), dtype = np.float32)
+        self.endeffector_pos = np.zeros((self.T, state_dim), dtype = np.float32)
         self.joint_angles = np.zeros((self.T, 7), dtype = np.float32)
 
-@ray.actor
+# @ray.actor
 class TF_rec_converter(object):
     def __init__(self,sourcedirs,
                    tf_rec_dir = None,
@@ -71,6 +82,7 @@ class TF_rec_converter(object):
                 raise ValueError('path {} does not exist!'.format(self.tfrec_dir))
 
 
+
         self.src_names = [str.split(n, '/')[-1] for n in sourcedirs]
 
         traj_list = []
@@ -102,81 +114,82 @@ class TF_rec_converter(object):
         print 'length trajname_ind_l', len(trajname_ind_l)
 
         ###
-        print 'startind', self.startidx
-        for i in range(10):
-            print trajname_ind_l[i]
-
-        for i in range(10):
-            print trajname_ind_l[-i]
-        print 'trajend, ', trajend
-        print 'endind', self.endidx
-
-        if len(trajname_ind_l) != len(set(trajname_ind_l)):
-            print 'list has duplicates'
-        ###
-        pdb.set_trace()
+        # print 'startind', self.startidx
+        # for i in range(10):
+        #     print trajname_ind_l[i]
+        #
+        # for i in range(10):
+        #     print trajname_ind_l[-i]
+        # print 'trajend, ', trajend
+        # print 'endind', self.endidx
+        #
+        # if len(trajname_ind_l) != len(set(trajname_ind_l)):
+        #     print 'list has duplicates'
+        # ###
+        # pdb.set_trace()
 
         random.shuffle(trajname_ind_l)
 
         tf_start_ind = self.startidx
         for traj_tuple in trajname_ind_l:  # loop of traj0, traj1,..
 
-            try:
-                trajname = traj_tuple[0]
-                # print 'processing {}, seq-part {}'.format(trajname, traj_tuple[1] )
+            # try:
+            trajname = traj_tuple[0]
+            # print 'processing {}, seq-part {}'.format(trajname, traj_tuple[1] )
 
-                traj_index = re.match('.*?([0-9]+)$', trajname).group(1)
-                self.traj = Trajectory(self.src_names, self.split_seq_by)
+            traj_index = re.match('.*?([0-9]+)$', trajname).group(1)
+            self.traj = Trajectory()
 
-                traj_subpath = '/'.join(str.split(trajname, '/')[-2:])   #string with only the group and trajectory
+            traj_subpath = '/'.join(str.split(trajname, '/')[-2:])   #string with only the group and trajectory
 
-                #load actions:
-                pkl_file = trajname + '/joint_angles_traj{}.pkl'.format(traj_index)
-                if not os.path.isfile(pkl_file):
-                    nopkl_file += 1
-                    print 'no pkl file found, file no: ', nopkl_file
-                    continue
-
-                pkldata = cPickle.load(open(pkl_file, "rb"))
-                self.all_actions = pkldata['actions']
-                self.all_joint_angles = pkldata['jointangles']
-                self.all_endeffector_pos = pkldata['endeffector_pos']
-
-                traj_start_ind = traj_tuple[1] * self.traj.T
-                traj_end_ind = (traj_tuple[1] + 1) * self.traj.T
-                for i_src, src in enumerate(self.sourcedirs):  # loop over cameras: main, aux1, ..
-                    self.traj_dir_src = os.path.join(src, traj_subpath)
-                    self.step_from_to(traj_start_ind, traj_end_ind, i_src)
-
-                traj_list.append(self.traj)
-                maxlistlen = 256
-
-                if self.tfrec_dir != None:
-                    if maxlistlen == len(traj_list):
-
-                        filename = 'traj_{0}_to_{1}' \
-                            .format(tf_start_ind,tf_start_ind + maxlistlen-1)
-                        self.save_tf_record(filename, traj_list)
-                        tf_start_ind += maxlistlen
-                        traj_list = []
-
-                if self.gif_dir != None and not donegif:
-                    if len(traj_list) == ntraj_max:
-                        create_gif.comp_video(traj_list, self.gif_dir)
-                        print 'created gif, exiting'
-                        donegif = True
-
-                print 'processed {} trajectories'.format(len(traj_list))
-
-            except KeyboardInterrupt:
-                print 'exiting after Keyboard interrupt!'
-                return
-            except:
-                print '##############################################3'
-                print 'error occured!'
-                ierror += 1
-                print 'number of errors:', ierror
+            #load actions:
+            pkl_file = trajname + '/joint_angles_traj{}.pkl'.format(traj_index)
+            if not os.path.isfile(pkl_file):
+                nopkl_file += 1
+                print 'no pkl file found, file no: ', nopkl_file
                 continue
+
+            pkldata = cPickle.load(open(pkl_file, "rb"))
+            self.all_actions = pkldata['actions']
+            self.all_joint_angles = pkldata['jointangles']
+            self.all_endeffector_pos = pkldata['endeffector_pos']
+
+            traj_start_ind = traj_tuple[1] * self.traj.npictures
+            traj_end_ind = (traj_tuple[1] + 1) * self.traj.npictures
+            for i_src, src in enumerate(self.sourcedirs):  # loop over cameras: main, aux1, ..
+                self.traj_dir_src = os.path.join(src, traj_subpath)
+                self.step_from_to(traj_start_ind, traj_end_ind, i_src)
+
+            traj_list.append(self.traj)
+            # maxlistlen = 256 #################
+            maxlistlen = 5
+
+            if self.tfrec_dir != None:
+                if maxlistlen == len(traj_list):
+
+                    filename = 'traj_{0}_to_{1}' \
+                        .format(tf_start_ind,tf_start_ind + maxlistlen-1)
+                    self.save_tf_record(filename, traj_list)
+                    tf_start_ind += maxlistlen
+                    traj_list = []
+
+            if self.gif_dir != None and not donegif:
+                if len(traj_list) == ntraj_max:
+                    create_gif.comp_video(traj_list, self.gif_dir)
+                    print 'created gif, exiting'
+                    donegif = True
+
+            print 'processed {} trajectories'.format(len(traj_list))
+
+            # except KeyboardInterrupt:
+            #     print 'exiting after Keyboard interrupt!'
+            #     return
+            # except:
+            #     print '##############################################3'
+            #     print 'error occured!'
+            #     ierror += 1
+            #     print 'number of errors:', ierror
+            #     continue
 
         print 'done, {} errors occurred:'.format(ierror)
 
@@ -185,7 +198,7 @@ class TF_rec_converter(object):
 
     def step_from_to(self, start, end, i_src):
         trajind = 0  # trajind is the index in the target trajectory
-        for dataind in range(start, end):  # dataind is the index in the source trajetory
+        for dataind in range(start, end, self.traj.take_ev_nth_step):  # dataind is the index in the source trajetory
 
             # get low dimensional data
             self.traj.actions[trajind] = self.all_actions[dataind]
@@ -195,15 +208,15 @@ class TF_rec_converter(object):
             # getting color image:
             if self.crop_from_highres:
                 im_filename = self.traj_dir_src + '/images/{0}_full_cropped_im{1}_*'\
-                    .format(self.src_names[i_src], dataind)
+                    .format(self.src_names[i_src], str(dataind).zfill(2))
             else:
                 im_filename = self.traj_dir_src + '/images/{0}_cropped_im{1}_*.png'\
                     .format(self.src_names[i_src], dataind)
 
-            # if dataind == start:
-            #     print 'processed from file {}'.format(im_filename)
-            # if dataind == end - 1:
-            #     print 'processed to file {}'.format(im_filename)
+            if dataind == start:
+                print 'processed from file {}'.format(im_filename)
+            if dataind == end - self.traj.take_ev_nth_step:
+                print 'processed to file {}'.format(im_filename)
 
             file = glob.glob(im_filename)
             if len(file) > 1:
@@ -220,25 +233,6 @@ class TF_rec_converter(object):
                 im = self.crop_and_rot(file, i_src)
 
             self.traj.images[trajind, i_src] = im
-
-            # getting depth image:
-            # file = glob.glob(self.traj_dir_src + '/' + '/depth_images/{0}_cropped_depth_im{1}_*.png'
-            #                  .format(self.src_names[i_src], dataind))
-            # if len(file) > 1:
-            #     print 'warning: more than 1 depthimage one per time step for {}'.format(self.traj_dir_src + '/' +
-            #                                                                             'images/{0}_cropped_im{1}_*.png'.format(
-            #                                                                                 self.src_names[i_src], dataind))
-            # file = file[0]
-            # im = Image.open(file)
-            # im.load()
-            # if self.src_names[i_src] == 'aux1':
-            #     im = im.rotate(180)
-            # im = np.asarray(im)
-            # self.traj.dimages[trajind, i_src] = im
-            #
-            # file = glob.glob(self.traj_dir_src + '/depth_images/{0}_depth_im{1}_*.pkl'.format(self.src_names[i_src], dataind))
-            # file = file[0]
-            # self.traj.dvalues[trajind, i_src] = cPickle.load(open(file, "rb"))
 
             trajind += 1
 
@@ -290,14 +284,11 @@ class TF_rec_converter(object):
                 feature[str(tstep) + '/endeffector_pos'] = _float_feature(traj.endeffector_pos[tstep].tolist())
 
                 image_raw = traj.images[tstep, 0].tostring()  # for camera 0, i.e. main
-                feature[str(tstep) + '/image_main/encoded'] = _bytes_feature(image_raw)
-                image_raw = traj.images[tstep, 1].tostring()  # for camera 1, i.e. aux1
-                feature[str(tstep) + '/image_aux1/encoded'] = _bytes_feature(image_raw)
+                feature[str(tstep) + '/image_view0/encoded'] = _bytes_feature(image_raw)
 
-                image_raw = traj.images[tstep, 0].tostring()  # for camera 0, i.e. main
-                feature[str(tstep) + '/image_main/encoded'] = _bytes_feature(image_raw)
-                image_raw = traj.images[tstep, 1].tostring()  # for camera 1, i.e. aux1
-                feature[str(tstep) + '/image_aux1/encoded'] = _bytes_feature(image_raw)
+                if Trajectory().n_cam == 2:
+                    image_raw = traj.images[tstep, 1].tostring()  # for camera 1, i.e. aux1
+                    feature[str(tstep) + '/image_view1/encoded'] = _bytes_feature(image_raw)
 
             example = tf.train.Example(features=tf.train.Features(feature=feature))
             writer.write(example.SerializeToString())
@@ -315,7 +306,10 @@ def get_maxtraj(sourcedirs):
     groupnames = [str.split(n, '/')[-1] for n in groupnames]
     gr_ind = []
     for grname in groupnames:
-        gr_ind.append(int(re.match('.*?([0-9]+)$', grname).group(1)))
+        try:
+            gr_ind.append(int(re.match('.*?([0-9]+)$', grname).group(1)))
+        except:
+            continue
     max_gr = np.max(np.array(gr_ind))
 
     trajdir = sourcedirs[0] + "/traj_group{}".format(max_gr)
@@ -329,7 +323,7 @@ def get_maxtraj(sourcedirs):
     return max_traj
 
 
-def start_parallel(source_dirs,tf_rec_dir, gif_dir, crop_from_highres= True, split_seq_by=2):
+def start_parallel(sourcedirs,tf_rec_dir, gif_dir, crop_from_highres= True):
     ray.init()
 
     n_traj = get_maxtraj(sourcedirs)
@@ -340,7 +334,7 @@ def start_parallel(source_dirs,tf_rec_dir, gif_dir, crop_from_highres= True, spl
 
     workers = []
     for i in range(n_worker):
-        workers.append(TF_rec_converter(sourcedirs,tf_rec_dir, gif_dir, crop_from_highres,split_seq_by,start_idx[i], end_idx[i]))
+        workers.append(TF_rec_converter(sourcedirs,tf_rec_dir, gif_dir, crop_from_highres,start_idx[i], end_idx[i]))
 
     id_list = []
     for worker in workers:
@@ -351,44 +345,26 @@ def start_parallel(source_dirs,tf_rec_dir, gif_dir, crop_from_highres= True, spl
     res = [ray.get(id) for id in id_list]
 
 
-def start_parallel_multiprocessing(source_dirs,tf_rec_dir, gif_dir, crop_from_highres= True, split_seq_by=2):
-    n_traj = get_maxtraj(source_dirs)
-
-    n_worker = 12
-    traj_per_worker = int(n_traj / np.float32(n_worker))
-    start_idx = [traj_per_worker * i for i in range(n_worker)]
-    end_idx = [traj_per_worker * (i + 1) - 1 for i in range(n_worker)]
-
-    conflist = []
-    for i in range(n_worker):
-        conflist.append([sourcedirs,tf_rec_dir, gif_dir, crop_from_highres,split_seq_by,start_idx[i], end_idx[i]])
-
-    def worker(conf):
-        converter = TF_rec_converter(conf[0], conf[1], conf[2], conf[3], conf[4], conf[5], conf[6])
-        converter.gather()
-
-    p = Pool(n_worker)
-    p.map(worker, conflist)
-
-
 if __name__ == "__main__":
 
-    sourcedirs =["/media/frederik/harddrive/sawyerdata/softmotion_0511/main",
-                 "/media/frederik/harddrive/sawyerdata/softmotion_0511/aux1"]
+    dir = "/mnt/sda1/sawyerdata/wrist_rot"
+    sourcedirs =[dir + '/main']
 
-    gif_dir = '/media/frederik/harddrive/sawyerdata/softmotion_0511/exampletraj'
-    tf_rec_dir = '/media/frederik/harddrive/pushingdata/softmotion30_44k'
+    gif_file = dir + '/preview'
 
-    parallel = True
+    tf_rec_dir = '/mnt/sda1/pushingdata/wrist_rot'
+
+
+
+    parallel = False
 
     if parallel:
-        start_parallel(sourcedirs,tf_rec_dir, gif_dir,crop_from_highres= True, split_seq_by=1)
+        start_parallel(sourcedirs, tf_rec_dir, gif_file, crop_from_highres=True)
     else:
-
         tfrec_converter = TF_rec_converter(sourcedirs,
                                            tf_rec_dir,
-                                           gif_dir,
-                                           crop_from_highres= True,
-                                           split_seq_by=1, startidx=0,
+                                           gif_file,
+                                           crop_from_highres=True,
+                                           startidx=0,
                                            endidx=get_maxtraj(sourcedirs))
         tfrec_converter.gather()
