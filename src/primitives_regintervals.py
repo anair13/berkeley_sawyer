@@ -42,7 +42,7 @@ class Primitive_Executor(object):
         seq_length = 32
         n_traj_per_run = 3
         self.act_every = 4
-        self.duration = 18 #16  # duration of trajectory in seconds
+        self.duration = 20 #16  # duration of trajectory in seconds
 
         self.state_sequence_length = seq_length*n_traj_per_run # number of snapshots that are taken
 
@@ -92,12 +92,12 @@ class Primitive_Executor(object):
 
         # check if there is a checkpoint from which to resume
         if os.path.isfile(self.checkpoint_file):
-            start_tr, start_grp = self.parse_ckpt()
-            print 'resuming data collection at trajectory {} in group {}'.format(start_tr, start_grp)
-            self.recorder.igrp = start_grp
+            last_tr, last_grp = self.parse_ckpt()
+            start_tr = last_tr + 1
+            print 'resuming data collection at trajectory {}'.format(start_tr)
+            self.recorder.igrp = last_grp
             try:
                 self.recorder.delete_traj(start_tr)
-                self.recorder.delete_traj(start_tr+1)
             except:
                 print 'trajectory was not deleted'
         else:
@@ -133,6 +133,10 @@ class Primitive_Executor(object):
                 nfail_traj = 0
 
             self.write_ckpt(tr, self.recorder.igrp)
+
+            if ((tr+1) % 3000) == 0:
+                print 'change objects!'
+                pdb.set_trace()
             self.alive_publisher.publish('still alive!')
 
 
@@ -218,7 +222,7 @@ class Primitive_Executor(object):
 
     def run_trajectory(self, i_tr):
 
-        self.set_neutral_with_impedance(duration=0.8)
+        self.set_neutral_with_impedance(duration=0.7)
 
         self.ctrl.gripper.open()
         self.gripper_closed = False
@@ -226,7 +230,7 @@ class Primitive_Executor(object):
         if self.save_active:
             self.recorder.init_traj(i_tr)
 
-        self.lower_height = 0.18
+        self.lower_height = 0.17
         self.delta_up = 0.12
         self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
         self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
@@ -419,7 +423,7 @@ class Primitive_Executor(object):
             if self.robot_move:
                 if self.use_imp_ctrl:
                     self.imp_ctrl_release_spring(20)
-                    self.move_with_impedance_sec(des_joint_angles, duration=1.0)
+                    self.move_with_impedance_sec(des_joint_angles, duration=1.5)
                 else:
                     self.ctrl.limb.move_to_joint_positions(des_joint_angles)
         except OSError:
