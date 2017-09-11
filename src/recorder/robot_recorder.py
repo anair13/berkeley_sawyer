@@ -232,8 +232,7 @@ class RobotRecorder(object):
     def init_traj(self, itr):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
-        if ((itr) % self.ngroup) == 0:
-            self.igrp += 1
+        self.igrp = itr/ self.ngroup
 
         if self.use_aux:
             try:
