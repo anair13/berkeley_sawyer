@@ -232,6 +232,9 @@ class RobotRecorder(object):
     def init_traj(self, itr):
         assert self.instance_type == 'main'
         # request init service for auxiliary recorders
+        if ((itr) % self.ngroup) == 0:
+            self.igrp += 1
+
         if self.use_aux:
             try:
                 rospy.wait_for_service('init_traj', timeout=1)
@@ -241,10 +244,6 @@ class RobotRecorder(object):
                 raise ValueError('get_kinectdata service failed')
 
         self._init_traj_local(itr)
-
-        if ((itr+1) % self.ngroup) == 0:
-            self.igrp += 1
-
 
     def _init_traj_local(self, itr):
         """
