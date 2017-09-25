@@ -22,11 +22,20 @@ import re
 import cv2
 import ray
 import create_gif
+import argparse
+
+
+class More_than_one_image_except(Exception):
+    def __init__(self, imagefile):
+        self.image_file = imagefile
+    def __str__(self):
+      return self.image_file
 
 class Trajectory(object):
     def __init__(self):
 
         total_num_img = 96 #the actual number of images in the trajectory (for softmotion total_num_img=30)
+        self.traj_per_group = 1000
         self.take_ev_nth_step = 2 #only use every n-step from the data (for softmotion take_ev_nth_step=1)
         split_seq_by = 1  #if greater than 1 split trajectory in n equal parts
 
@@ -46,95 +55,55 @@ class Trajectory(object):
         self.endeffector_pos = np.zeros((self.T, state_dim), dtype = np.float32)
         self.joint_angles = np.zeros((self.T, 7), dtype = np.float32)
 
-# @ray.actor
+@ray.remote
 class TF_rec_converter(object):
-    def __init__(self,sourcedirs,
-                   tf_rec_dir = None,
-                   gif_dir= None,
-                   crop_from_highres = False,
-                   split_seq_by = 1,
-                   startidx = None,
-                   endidx = None):
+    def __init__(self, sourcedirs,
+                       tf_rec_dir = None,
+                       gif_dir= None,
+                       traj_name_list = None,
+                       tf_start_ind = None,
+                       crop_from_highres = False):
+        """
+        :param sourcedirs:  directory where the raw data lies
+        :param tf_rec_dir:  director where to save tf records
+        :param gif_dir:  where to save gif
+        :param traj_name_list: a list of trajectory-folders
+        :param tf_start_ind: the starting index to use in the tf-record filename
+        :param crop_from_highres: whether to crop the image from the full resolution image
+        """
 
-        self.startidx = startidx
-        self.endidx = endidx
         self.sourcedirs = sourcedirs
         self.tfrec_dir = tf_rec_dir
         self.gif_dir = gif_dir
         self.crop_from_highres = crop_from_highres
-        self.split_seq_by = split_seq_by
-
+        self.tf_start_ind = tf_start_ind
+        self.traj_name_list = traj_name_list
         print 'started process with PID:', os.getpid()
 
 
     def gather(self):
-        print 'PID: {0} started gather going from {1} to {2}'.format(os.getpid(), self.startidx, self.endidx)
+        print
 
         donegif = False
-        ierror = 0
+        i_more_than_one_image = 0
 
         nopkl_file = 0
-        if self.tfrec_dir != None:
-            for dirs in self.sourcedirs:
-                if not os.path.exists(dirs):
-                    raise ValueError('path {} does not exist!'.format(dirs))
-            if not os.path.exists(self.tfrec_dir):
-                raise ValueError('path {} does not exist!'.format(self.tfrec_dir))
 
+        for dirs in self.sourcedirs:
+            if not os.path.exists(dirs):
+                raise ValueError('path {} does not exist!'.format(dirs))
+        if not os.path.exists(self.tfrec_dir):
+            raise ValueError('path {} does not exist!'.format(self.tfrec_dir))
 
-
-        self.src_names = [str.split(n, '/')[-1] for n in sourcedirs]
+        self.src_names = [str.split(n, '/')[-1] for n in self.sourcedirs]
 
         traj_list = []
-        ntraj_max = 8
-        startgrp = self.startidx / 1000
-        endgrp = self.endidx / 1000
+        ntraj_gifmax = 8
 
-        trajname_ind_l = []  # list of tuples (trajname, ind) where ind is 0,1,2 in range(self.split_seq_by)
-        for gr in range(startgrp, endgrp+1):  # loop over groups
-            gr_dir_main = self.sourcedirs[0] + '/traj_group' + str(gr)
 
-            if gr == startgrp:
-                trajstart = self.startidx
-            else:
-                trajstart = gr*1000
-            if gr == endgrp:
-                trajend = self.endidx
-            else:
-                trajend = (gr+1)*1000-1
+        tf_start_ind = self.tf_start_ind
+        for trajname in self.traj_name_list:  # loop of traj0, traj1,..
 
-            for i_tra in range(trajstart, trajend+1):
-                trajdir = gr_dir_main + "/traj{}".format(i_tra)
-                if not os.path.exists(trajdir):
-                    print 'file {} not found!'.format(trajdir)
-                    continue
-                for i in range(self.split_seq_by):
-                    trajname_ind_l.append((trajdir, i))
-
-        print 'length trajname_ind_l', len(trajname_ind_l)
-
-        ###
-        # print 'startind', self.startidx
-        # for i in range(10):
-        #     print trajname_ind_l[i]
-        #
-        # for i in range(10):
-        #     print trajname_ind_l[-i]
-        # print 'trajend, ', trajend
-        # print 'endind', self.endidx
-        #
-        # if len(trajname_ind_l) != len(set(trajname_ind_l)):
-        #     print 'list has duplicates'
-        # ###
-        # pdb.set_trace()
-
-        random.shuffle(trajname_ind_l)
-
-        tf_start_ind = self.startidx
-        for traj_tuple in trajname_ind_l:  # loop of traj0, traj1,..
-
-            # try:
-            trajname = traj_tuple[0]
             # print 'processing {}, seq-part {}'.format(trajname, traj_tuple[1] )
 
             traj_index = re.match('.*?([0-9]+)$', trajname).group(1)
@@ -154,51 +123,44 @@ class TF_rec_converter(object):
             self.all_joint_angles = pkldata['jointangles']
             self.all_endeffector_pos = pkldata['endeffector_pos']
 
-            traj_start_ind = traj_tuple[1] * self.traj.npictures
-            traj_end_ind = (traj_tuple[1] + 1) * self.traj.npictures
-            for i_src, src in enumerate(self.sourcedirs):  # loop over cameras: main, aux1, ..
-                self.traj_dir_src = os.path.join(src, traj_subpath)
-                self.step_from_to(traj_start_ind, traj_end_ind, i_src)
+            try:
+                for i_src, src in enumerate(self.sourcedirs):  # loop over cameras: main, aux1, ..
+                    self.traj_dir_src = os.path.join(src, traj_subpath)
+                    self.step_from_to(i_src)
+            except More_than_one_image_except as e:
+                print "more than one image in ", e.image_file
+                i_more_than_one_image += 1
+                continue
 
             traj_list.append(self.traj)
-            # maxlistlen = 256 #################
-            maxlistlen = 5
+            maxlistlen = 128
 
-            if self.tfrec_dir != None:
-                if maxlistlen == len(traj_list):
+            if maxlistlen == len(traj_list):
 
-                    filename = 'traj_{0}_to_{1}' \
-                        .format(tf_start_ind,tf_start_ind + maxlistlen-1)
-                    self.save_tf_record(filename, traj_list)
-                    tf_start_ind += maxlistlen
-                    traj_list = []
+                filename = 'traj_{0}_to_{1}' \
+                    .format(tf_start_ind,tf_start_ind + maxlistlen-1)
+                self.save_tf_record(filename, traj_list)
+                tf_start_ind += maxlistlen
+                traj_list = []
 
             if self.gif_dir != None and not donegif:
-                if len(traj_list) == ntraj_max:
-                    create_gif.comp_video(traj_list, self.gif_dir)
+                if len(traj_list) == ntraj_gifmax:
+                    create_gif.comp_video(traj_list, self.gif_dir + 'worker{}'.format(os.getpid()))
                     print 'created gif, exiting'
                     donegif = True
 
             print 'processed {} trajectories'.format(len(traj_list))
 
-            # except KeyboardInterrupt:
-            #     print 'exiting after Keyboard interrupt!'
-            #     return
-            # except:
-            #     print '##############################################3'
-            #     print 'error occured!'
-            #     ierror += 1
-            #     print 'number of errors:', ierror
-            #     continue
 
-        print 'done, {} errors occurred:'.format(ierror)
+        print 'done, {} more_than_one_image occurred:'.format(i_more_than_one_image)
 
         return 'done'
 
 
-    def step_from_to(self, start, end, i_src):
+    def step_from_to(self,  i_src):
         trajind = 0  # trajind is the index in the target trajectory
-        for dataind in range(start, end, self.traj.take_ev_nth_step):  # dataind is the index in the source trajetory
+        end = Trajectory().npictures
+        for dataind in range(0, end, self.traj.take_ev_nth_step):  # dataind is the index in the source trajetory
 
             # get low dimensional data
             self.traj.actions[trajind] = self.all_actions[dataind]
@@ -213,14 +175,14 @@ class TF_rec_converter(object):
                 im_filename = self.traj_dir_src + '/images/{0}_cropped_im{1}_*.png'\
                     .format(self.src_names[i_src], dataind)
 
-            if dataind == start:
+            if dataind == 0:
                 print 'processed from file {}'.format(im_filename)
             if dataind == end - self.traj.take_ev_nth_step:
                 print 'processed to file {}'.format(im_filename)
 
             file = glob.glob(im_filename)
             if len(file) > 1:
-                print 'warning: more than 1 image one per time step for {}'.format(im_filename)
+                raise More_than_one_image_except(im_filename)
             file = file[0]
 
             if not self.crop_from_highres:
@@ -246,7 +208,7 @@ class TF_rec_converter(object):
             img = cv2.resize(img, (0, 0), fx=1 / 12., fy=1 / 12., interpolation=cv2.INTER_AREA)
         else:
             rowstart = 10
-            colstart = 28
+            colstart = 32#28
             img = cv2.resize(img, (0, 0), fx=1 / 9., fy=1 / 9., interpolation=cv2.INTER_AREA)
         img = img[rowstart:rowstart+imheight, colstart:colstart+imwidht]
         # assert img.shape == (64,64,3)
@@ -254,8 +216,10 @@ class TF_rec_converter(object):
 
         if self.src_names[i_src] == 'aux1':
             img = imutils.rotate_bound(img, 180)
-            # img = Image.fromarray(img)
-            # img.show()
+
+        # img = Image.fromarray(img)
+        # img.show()
+        # pdb.set_trace()
 
         return img
 
@@ -263,12 +227,14 @@ class TF_rec_converter(object):
         """
         saves data_files from one sample trajectory into one tf-record file
         """
-        train_dir = os.path.join(tf_rec_dir, 'train')
-        if not os.path.exists(self.tfrec_dir):
-            os.makedirs(train_dir)
+        train_dir = os.path.join(self.tfrec_dir, 'train')
 
         filename = os.path.join(train_dir, filename + '.tfrecords')
         print('Writing', filename)
+
+        if not os.path.exists(train_dir):
+            os.makedirs(train_dir)
+
         writer = tf.python_io.TFRecordWriter(filename)
 
         feature = {}
@@ -323,48 +289,125 @@ def get_maxtraj(sourcedirs):
     return max_traj
 
 
-def start_parallel(sourcedirs,tf_rec_dir, gif_dir, crop_from_highres= True):
+def start_parallel(sourcedirs, tf_rec_dir, gif_dir, traj_name_list, crop_from_highres= True, start_end_grp = None):
+    """
+    :param sourcedirs:
+    :param tf_rec_dir:
+    :param gif_dir:
+    :param traj_name_list:
+    :param crop_from_highres:
+    :param start_end_grp: list with [startgrp, endgrp]
+    :return:
+    """
     ray.init()
 
-    n_traj = get_maxtraj(sourcedirs)
-    n_worker = 10
+    itraj_start = 0
+    n_traj = len(traj_name_list)
+
+    n_worker = 5
+
     traj_per_worker = int(n_traj / np.float32(n_worker))
-    start_idx = [traj_per_worker * i for i in range(n_worker)]
-    end_idx = [traj_per_worker * (i + 1) - 1 for i in range(n_worker)]
+    start_idx = [itraj_start+traj_per_worker * i for i in range(n_worker)]
+    end_idx = [itraj_start+traj_per_worker * (i + 1) - 1 for i in range(n_worker)]
 
     workers = []
     for i in range(n_worker):
-        workers.append(TF_rec_converter(sourcedirs,tf_rec_dir, gif_dir, crop_from_highres,start_idx[i], end_idx[i]))
+        print 'worker {} going from {} to {} '.format(i, start_idx[i], end_idx[i])
+        subset_traj = traj_name_list[start_idx[i]:end_idx[i]]
+        workers.append(TF_rec_converter.remote(sourcedirs,tf_rec_dir, gif_dir,subset_traj, start_idx[i], crop_from_highres))
 
     id_list = []
     for worker in workers:
         # time.sleep(2)
-        id_list.append(worker.gather())
+        id_list.append(worker.gather.remote())
 
     # blocking call
     res = [ray.get(id) for id in id_list]
 
 
-if __name__ == "__main__":
+def make_traj_name_list(sourcedirs, start_end_grp = None):
+
+
+    traj_per_gr = Trajectory().traj_per_group
+    max_traj = get_maxtraj(sourcedirs)
+
+    if start_end_grp != None:
+        startgrp = start_end_grp[0]
+        startidx = startgrp*Trajectory().traj_per_group
+        endgrp = start_end_grp[1]
+        if max_traj < (endgrp+1)*traj_per_gr -1:
+            endidx = max_traj
+        else:
+            endidx = (endgrp+1)*traj_per_gr -1
+    else:
+        endidx = max_traj
+        startgrp = 0
+        startidx = 0
+        endgrp = endidx / traj_per_gr
+
+    trajname_ind_l = []  # list of tuples (trajname, ind) where ind is 0,1,2 in range(self.split_seq_by)
+    for gr in range(startgrp, endgrp + 1):  # loop over groups
+        gr_dir_main = sourcedirs[0] + '/traj_group' + str(gr)
+
+        if gr == startgrp:
+            trajstart = startidx
+        else:
+            trajstart = gr * traj_per_gr
+        if gr == endgrp:
+            trajend = endidx
+        else:
+            trajend = (gr + 1) * traj_per_gr - 1
+
+        for i_tra in range(trajstart, trajend + 1):
+            trajdir = gr_dir_main + "/traj{}".format(i_tra)
+            if not os.path.exists(trajdir):
+                print 'file {} not found!'.format(trajdir)
+                continue
+            trajname_ind_l.append(trajdir)
+
+    print 'length trajname_ind_l', len(trajname_ind_l)
+
+    assert len(trajname_ind_l) == len(set(trajname_ind_l))
+
+    random.shuffle(trajname_ind_l)
+
+    return trajname_ind_l
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Run benchmarks')
+    parser.add_argument('tf_rec_dir', type=str, help='folder in which to save tfrecords')
+    parser.add_argument('--start_gr', type=int, default=None, help='start group')
+    parser.add_argument('--end_gr', type=int, default=None, help='end group')
+    parser.add_argument('--no_parallel', type=bool, default=False, help='do not use parallel processing')
+
+    args = parser.parse_args()
 
     dir = "/mnt/sda1/sawyerdata/wrist_rot"
-    sourcedirs =[dir + '/main']
+    sourcedirs = [dir + '/main']
 
     gif_file = dir + '/preview'
 
-    tf_rec_dir = '/mnt/sda1/pushingdata/wrist_rot'
+    tf_rec_dir = args.tf_rec_dir
 
+    if args.start_gr != None:
+        start_end_grp = [args.start_gr,args.end_gr]
 
+    parallel = not args.no_parallel
 
-    parallel = False
+    traj_name_list = make_traj_name_list(sourcedirs, start_end_grp = start_end_grp)
 
     if parallel:
-        start_parallel(sourcedirs, tf_rec_dir, gif_file, crop_from_highres=True)
+        start_parallel(sourcedirs, tf_rec_dir, gif_file, traj_name_list,
+                       crop_from_highres=True, start_end_grp=start_end_grp)
     else:
         tfrec_converter = TF_rec_converter(sourcedirs,
                                            tf_rec_dir,
                                            gif_file,
-                                           crop_from_highres=True,
-                                           startidx=0,
-                                           endidx=get_maxtraj(sourcedirs))
+                                           traj_name_list,
+                                           0,
+                                           crop_from_highres=True)
         tfrec_converter.gather()
+
+if __name__ == "__main__":
+    main()
