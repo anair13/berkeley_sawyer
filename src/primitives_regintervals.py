@@ -42,7 +42,7 @@ class Primitive_Executor(object):
         seq_length = 32
         n_traj_per_run = 3   # corresponds to
         self.act_every = 4
-        self.duration = 20 #16  # duration of trajectory in seconds
+        self.duration = 24 #16  # duration of trajectory in seconds
 
         self.state_sequence_length = seq_length*n_traj_per_run # number of snapshots that are taken
 
@@ -51,7 +51,7 @@ class Primitive_Executor(object):
         print 'time between actions:', 1 / action_frequency
 
         self.ctrl = robot_controller.RobotController()
-        self.recorder = robot_recorder.RobotRecorder(save_dir="/home/febert/Documents/sawyer_data/newrecording",
+        self.recorder = robot_recorder.RobotRecorder(save_dir="/media/febert/harddisk/febert/sawyer_data/newrecording",
                                                      seq_len=self.state_sequence_length, use_aux=False)
 
         self.alive_publisher = rospy.Publisher('still_alive', String, queue_size=10)
@@ -116,6 +116,7 @@ class Primitive_Executor(object):
                 except Traj_aborted_except:
                     self.recorder.delete_traj(tr)
                     nfail_traj +=1
+                    rospy.sleep(.2)
 
             if ((tr+1)% 20) == 0:
                 self.redistribute_objects()
@@ -221,7 +222,7 @@ class Primitive_Executor(object):
 
     def run_trajectory(self, i_tr):
 
-        self.set_neutral_with_impedance(duration=0.7)
+        self.set_neutral_with_impedance(duration=1.)
 
         self.ctrl.gripper.open()
         self.gripper_closed = False
@@ -229,23 +230,25 @@ class Primitive_Executor(object):
         if self.save_active:
             self.recorder.init_traj(i_tr)
 
-        self.lower_height = 0.17
+        self.lower_height = 0.16
         self.delta_up = 0.12
-        self.xlim = [0.44, 0.83]  # min, max in cartesian X-direction
-        self.ylim = [-0.27, 0.18]  # min, max in cartesian Y-direction
+        self.xlim = [0.46, 0.83]  # min, max in cartesian X-direction
+        # self.ylim = [-0.20, 0.18]  # min, max in cartesian Y-direction
+        self.ylim = [-0.17, 0.17]  # min, max in cartesian Y-direction
 
         startpos = np.array(
             [np.random.uniform(self.xlim[0], self.xlim[1]), np.random.uniform(self.ylim[0], self.ylim[1])])
         if self.enable_rot:
             start_angle = np.array([np.random.uniform(0., np.pi * 2)])
-            self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height]), start_angle], axis=0)
+            self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height + self.delta_up]), start_angle], axis=0)
         else:
-            self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height])], axis=0)
+            self.des_pos = np.concatenate([startpos, np.asarray([self.lower_height + self.delta_up])], axis=0)
 
         self.topen, self.t_down = 0, 0
 
         #move to start:
         self.move_to_startpos()
+        self.godown()
 
         start_time = rospy.get_time()  # in seconds
         finish_time = start_time + self.duration  # in seconds
@@ -271,13 +274,13 @@ class Primitive_Executor(object):
 
             if i_act < len(tact):
                 if self.curr_delta_time > tact[i_act]:
-                    print 'current position error', self.des_pos[:3] - self.get_endeffector_pos(pos_only=True)
+                    # print 'current position error', self.des_pos[:3] - self.get_endeffector_pos(pos_only=True)
 
                     self.previous_des_pos = copy.deepcopy(self.des_pos)
                     action_vec = self.act_joint(i_act)  # after completing trajectory save final state
-                    print 'prev_desired pos in step {0}: {1}'.format(i_act, self.previous_des_pos)
-                    print 'new desired pos in step {0}: {1}'.format(i_act, self.des_pos)
-                    print 'action vec', action_vec
+                    # print 'prev_desired pos in step {0}: {1}'.format(i_act, self.previous_des_pos)
+                    # print 'new desired pos in step {0}: {1}'.format(i_act, self.des_pos)
+                    # print 'action vec', action_vec
                     self.t_prev = tact[i_act]
                     if i_act == len(tact)-1:
                         self.t_next = tsave[-1]
@@ -295,20 +298,15 @@ class Primitive_Executor(object):
                         self.ctrl.limb.set_joint_positions(des_joint_angles)
                     # print des_joint_angles
             except OSError:
-                rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
-                rospy.sleep(.5)
-                raise Traj_aborted_except('raising Traj_aborted_except')
-            if self.ctrl.limb.has_collided():
-                rospy.logerr('collision detected!!!')
+                rospy.logerr('error detected, stopping trajectory, going to reset robot...')
                 rospy.sleep(.5)
                 raise Traj_aborted_except('raising Traj_aborted_except')
 
             if self.curr_delta_time > tsave[i_save]:
-                # print 'saving index{}'.format(i_save)
                 if self.save_active:
                     self.recorder.save(i_save, action_vec, self.get_endeffector_pos(pos_only=False))
                 i_save += 1
-
+                print 'current position error', self.des_pos[:3] - self.get_endeffector_pos(pos_only=True)
 
             self.control_rate.sleep()
 
@@ -372,6 +370,22 @@ class Primitive_Executor(object):
         self.imp_ctrl_release_spring(50)
         self.move_with_impedance_sec(des_joint_angles, duration=.5)
 
+    def godown(self):
+        print "going down at trajectory start.."
+        self.des_pos[2] = self.lower_height
+        desired_pose = self.get_des_pose(self.des_pos)
+        start_joints = self.ctrl.limb.joint_angles()
+        try:
+            des_joint_angles = inverse_kinematics.get_joint_angles(desired_pose, seed_cmd=start_joints,
+                                                                   use_advanced_options=True)
+        except ValueError:
+            rospy.logerr('no inverse kinematics solution found, '
+                         'going to reset robot...')
+            current_joints = self.ctrl.limb.joint_angles()
+            self.ctrl.limb.set_joint_positions(current_joints)
+            raise Traj_aborted_except('raising Traj_aborted_except')
+        self.move_with_impedance_sec(des_joint_angles, duration=.7)
+
     def imp_ctrl_release_spring(self, maxstiff):
         self.imp_ctrl_release_spring_pub.publish(maxstiff)
 
@@ -422,15 +436,11 @@ class Primitive_Executor(object):
             if self.robot_move:
                 if self.use_imp_ctrl:
                     self.imp_ctrl_release_spring(20)
-                    self.move_with_impedance_sec(des_joint_angles, duration=1.5)
+                    self.move_with_impedance_sec(des_joint_angles, duration=0.9)
                 else:
                     self.ctrl.limb.move_to_joint_positions(des_joint_angles)
         except OSError:
-            rospy.logerr('collision detected, stopping trajectory, going to reset robot...')
-            rospy.sleep(.5)
-            raise Traj_aborted_except('raising Traj_aborted_except')
-        if self.ctrl.limb.has_collided():
-            rospy.logerr('collision detected!!!')
+            rospy.logerr('error detected, stopping trajectory, going to reset robot...')
             rospy.sleep(.5)
             raise Traj_aborted_except('raising Traj_aborted_except')
 
@@ -482,7 +492,7 @@ class Primitive_Executor(object):
                 self.gripper_up = False
 
 
-        self.imp_ctrl_release_spring(100.)
+        self.imp_ctrl_release_spring(80.)
         action_vec = np.concatenate([np.array([posshift[0]]),  # movement in plane
                                      np.array([posshift[1]]),  # movement in plane
                                      np.array([up_cmd]),
@@ -534,7 +544,7 @@ class Primitive_Executor(object):
         self.imp_ctrl_release_spring(100)
         self.imp_ctrl_active.publish(1)
 
-        replay_rate = rospy.Rate(950)
+        replay_rate = rospy.Rate(700)
         for t in range(len(self.joint_pos)):
             print 'step {0} joints: {1}'.format(t, self.joint_pos[t])
             replay_rate.sleep()
