@@ -528,9 +528,10 @@ class Primitive_Executor(object):
         if pos[1] < ylim[0]:
             pos[1] = ylim[0]
 
-        alpha_min = -0.78539
-        alpha_max = np.pi
-        pos[3] = np.clip(pos[3], alpha_min, alpha_max)
+        if self.enable_rot:
+            alpha_min = -0.78539
+            alpha_max = np.pi
+            pos[3] = np.clip(pos[3], alpha_min, alpha_max)
 
         return  pos
 
