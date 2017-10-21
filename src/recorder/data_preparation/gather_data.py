@@ -23,6 +23,8 @@ import cv2
 import ray
 import create_gif
 import argparse
+import sys
+import imp
 
 
 class More_than_one_image_except(Exception):
@@ -32,11 +34,17 @@ class More_than_one_image_except(Exception):
       return self.image_file
 
 class Trajectory(object):
-    def __init__(self):
+    def __init__(self, conf):
 
-        total_num_img = 96 #the actual number of images in the trajectory (for softmotion total_num_img=30)
+        if 'total_num_img' in conf:
+            total_num_img = conf['total_num_img']
+        else: total_num_img = 96 #the actual number of images in the trajectory (for softmotion total_num_img=30)
+
         self.traj_per_group = 1000
-        self.take_ev_nth_step = 2 #only use every n-step from the data (for softmotion take_ev_nth_step=1)
+
+        if 'take_ev_nth_step' in conf:
+            self.take_ev_nth_step = conf['take_ev_nth_step']
+        else: self.take_ev_nth_step = 2 #only use every n-step from the data (for softmotion take_ev_nth_step=1)
         split_seq_by = 1  #if greater than 1 split trajectory in n equal parts
 
         self.npictures = total_num_img/split_seq_by  #number of images after splitting (include images we use and not use)
@@ -45,9 +53,12 @@ class Trajectory(object):
         self.n_cam = len(self.cameranames)  # number of cameras
 
         self.T = total_num_img / split_seq_by / self.take_ev_nth_step  # the number of timesteps in final trajectory
-        self.images = np.zeros((self.T, self.n_cam, 64, 64, 3), dtype = np.uint8)  # n_cam=0: main, n_cam=1: aux1
-        self.dimages = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.uint8)
-        self.dvalues = np.zeros((self.T, self.n_cam, 64, 64), dtype = np.float32)
+
+        h = conf['target_res'][0]
+        w = conf['target_res'][1]
+        self.images = np.zeros((self.T, self.n_cam, h, w, 3), dtype = np.uint8)  # n_cam=0: main, n_cam=1: aux1
+        self.dimages = np.zeros((self.T, self.n_cam, h, w), dtype = np.uint8)
+        self.dvalues = np.zeros((self.T, self.n_cam, h, w), dtype = np.float32)
 
         action_dim = 5  # (for softmotion action_dim=4)
         state_dim = 4  # (for softmotion action_dim=4)
@@ -57,8 +68,7 @@ class Trajectory(object):
 
 @ray.remote
 class TF_rec_converter(object):
-    def __init__(self, sourcedirs,
-                       tf_rec_dir = None,
+    def __init__(self, conf,
                        gif_dir= None,
                        traj_name_list = None,
                        tf_start_ind = None,
@@ -72,12 +82,13 @@ class TF_rec_converter(object):
         :param crop_from_highres: whether to crop the image from the full resolution image
         """
 
-        self.sourcedirs = sourcedirs
-        self.tfrec_dir = tf_rec_dir
+        self.sourcedirs = conf['sourcedirs']
+        self.tfrec_dir = conf['tf_rec_dir']
         self.gif_dir = gif_dir
         self.crop_from_highres = crop_from_highres
         self.tf_start_ind = tf_start_ind
         self.traj_name_list = traj_name_list
+        self.conf = conf
         print 'started process with PID:', os.getpid()
 
 
@@ -107,7 +118,7 @@ class TF_rec_converter(object):
             # print 'processing {}, seq-part {}'.format(trajname, traj_tuple[1] )
 
             traj_index = re.match('.*?([0-9]+)$', trajname).group(1)
-            self.traj = Trajectory()
+            self.traj = Trajectory(self.conf)
 
             traj_subpath = '/'.join(str.split(trajname, '/')[-2:])   #string with only the group and trajectory
 
@@ -159,7 +170,7 @@ class TF_rec_converter(object):
 
     def step_from_to(self,  i_src):
         trajind = 0  # trajind is the index in the target trajectory
-        end = Trajectory().npictures
+        end = Trajectory(self.conf).npictures
         for dataind in range(0, end, self.traj.take_ev_nth_step):  # dataind is the index in the source trajetory
 
             # get low dimensional data
@@ -200,16 +211,15 @@ class TF_rec_converter(object):
 
     def crop_and_rot(self, file, i_src):
         img = cv2.imread(file)
-        imheight = 64
-        imwidht = 64
-        if self.src_names[i_src] == 'aux1':
-            rowstart = 0
-            colstart = 17
-            img = cv2.resize(img, (0, 0), fx=1 / 12., fy=1 / 12., interpolation=cv2.INTER_AREA)
-        else:
-            rowstart = 10
-            colstart = 32#28
-            img = cv2.resize(img, (0, 0), fx=1 / 9., fy=1 / 9., interpolation=cv2.INTER_AREA)
+        imheight = self.conf['target_res'][0]
+        imwidht = self.conf['target_res'][1]
+
+        shrink_factor = self.conf['shrink_before_crop']
+
+        img = cv2.resize(img, (0, 0), fx=shrink_factor, fy=shrink_factor, interpolation=cv2.INTER_AREA)
+        rowstart = self.conf['rowstart']
+        colstart = self.conf['colstart']
+
         img = img[rowstart:rowstart+imheight, colstart:colstart+imwidht]
         # assert img.shape == (64,64,3)
         img = img[...,::-1]
@@ -252,7 +262,7 @@ class TF_rec_converter(object):
                 image_raw = traj.images[tstep, 0].tostring()  # for camera 0, i.e. main
                 feature[str(tstep) + '/image_view0/encoded'] = _bytes_feature(image_raw)
 
-                if Trajectory().n_cam == 2:
+                if Trajectory(self.conf).n_cam == 2:
                     image_raw = traj.images[tstep, 1].tostring()  # for camera 1, i.e. aux1
                     feature[str(tstep) + '/image_view1/encoded'] = _bytes_feature(image_raw)
 
@@ -289,7 +299,7 @@ def get_maxtraj(sourcedirs):
     return max_traj
 
 
-def start_parallel(sourcedirs, tf_rec_dir, gif_dir, traj_name_list, crop_from_highres= True, start_end_grp = None):
+def start_parallel(conf, gif_dir, traj_name_list, crop_from_highres= True, start_end_grp = None):
     """
     :param sourcedirs:
     :param tf_rec_dir:
@@ -314,7 +324,7 @@ def start_parallel(sourcedirs, tf_rec_dir, gif_dir, traj_name_list, crop_from_hi
     for i in range(n_worker):
         print 'worker {} going from {} to {} '.format(i, start_idx[i], end_idx[i])
         subset_traj = traj_name_list[start_idx[i]:end_idx[i]]
-        workers.append(TF_rec_converter.remote(sourcedirs,tf_rec_dir, gif_dir,subset_traj, start_idx[i], crop_from_highres))
+        workers.append(TF_rec_converter.remote(conf, gif_dir,subset_traj, start_idx[i], crop_from_highres))
 
     id_list = []
     for worker in workers:
@@ -325,15 +335,15 @@ def start_parallel(sourcedirs, tf_rec_dir, gif_dir, traj_name_list, crop_from_hi
     res = [ray.get(id) for id in id_list]
 
 
-def make_traj_name_list(sourcedirs, start_end_grp = None):
+def make_traj_name_list(conf, start_end_grp = None):
 
-
-    traj_per_gr = Trajectory().traj_per_group
+    sourcedirs = conf['sourcedirs']
+    traj_per_gr = Trajectory(conf).traj_per_group
     max_traj = get_maxtraj(sourcedirs)
 
     if start_end_grp != None:
         startgrp = start_end_grp[0]
-        startidx = startgrp*Trajectory().traj_per_group
+        startidx = startgrp*Trajectory(conf).traj_per_group
         endgrp = start_end_grp[1]
         if max_traj < (endgrp+1)*traj_per_gr -1:
             endidx = max_traj
@@ -376,33 +386,38 @@ def make_traj_name_list(sourcedirs, start_end_grp = None):
 
 def main():
     parser = argparse.ArgumentParser(description='Run benchmarks')
-    parser.add_argument('tf_rec_dir', type=str, help='folder in which to save tfrecords')
+    parser.add_argument('hyper', type=str, help='configuration file name')
     parser.add_argument('--start_gr', type=int, default=None, help='start group')
     parser.add_argument('--end_gr', type=int, default=None, help='end group')
     parser.add_argument('--no_parallel', type=bool, default=False, help='do not use parallel processing')
-
     args = parser.parse_args()
 
-    dir = "/mnt/sda1/sawyerdata/wrist_rot"
-    sourcedirs = [dir + '/main']
+    conf_file = args.hyper
+    if not os.path.exists(args.hyper):
+        sys.exit("configuration not found")
+    hyperparams = imp.load_source('hyperparams', conf_file)
+
+    conf = hyperparams.configuration
+
+    dir = conf["source_basedir"]
+    sourcedirs = conf['sourcedirs']
 
     gif_file = dir + '/preview'
 
-    tf_rec_dir = args.tf_rec_dir
-
     if args.start_gr != None:
         start_end_grp = [args.start_gr,args.end_gr]
+    else:
+        start_end_grp = None
 
     parallel = not args.no_parallel
 
-    traj_name_list = make_traj_name_list(sourcedirs, start_end_grp = start_end_grp)
+    traj_name_list = make_traj_name_list(conf, start_end_grp = start_end_grp)
 
     if parallel:
-        start_parallel(sourcedirs, tf_rec_dir, gif_file, traj_name_list,
+        start_parallel(conf, gif_file, traj_name_list,
                        crop_from_highres=True, start_end_grp=start_end_grp)
     else:
-        tfrec_converter = TF_rec_converter(sourcedirs,
-                                           tf_rec_dir,
+        tfrec_converter = TF_rec_converter(conf,
                                            gif_file,
                                            traj_name_list,
                                            0,
