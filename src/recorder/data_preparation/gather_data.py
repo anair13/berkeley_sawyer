@@ -97,6 +97,7 @@ class TF_rec_converter(object):
 
         donegif = False
         i_more_than_one_image = 0
+        num_errors = 0
 
         nopkl_file = 0
 
@@ -116,54 +117,58 @@ class TF_rec_converter(object):
         for trajname in self.traj_name_list:  # loop of traj0, traj1,..
 
             # print 'processing {}, seq-part {}'.format(trajname, traj_tuple[1] )
-
-            traj_index = re.match('.*?([0-9]+)$', trajname).group(1)
-            self.traj = Trajectory(self.conf)
-
-            traj_subpath = '/'.join(str.split(trajname, '/')[-2:])   #string with only the group and trajectory
-
-            #load actions:
-            pkl_file = trajname + '/joint_angles_traj{}.pkl'.format(traj_index)
-            if not os.path.isfile(pkl_file):
-                nopkl_file += 1
-                print 'no pkl file found, file no: ', nopkl_file
-                continue
-
-            pkldata = cPickle.load(open(pkl_file, "rb"))
-            self.all_actions = pkldata['actions']
-            self.all_joint_angles = pkldata['jointangles']
-            self.all_endeffector_pos = pkldata['endeffector_pos']
-
             try:
-                for i_src, src in enumerate(self.sourcedirs):  # loop over cameras: main, aux1, ..
-                    self.traj_dir_src = os.path.join(src, traj_subpath)
-                    self.step_from_to(i_src)
-            except More_than_one_image_except as e:
-                print "more than one image in ", e.image_file
-                i_more_than_one_image += 1
-                continue
+                traj_index = re.match('.*?([0-9]+)$', trajname).group(1)
+                self.traj = Trajectory(self.conf)
 
-            traj_list.append(self.traj)
-            maxlistlen = 128
+                traj_subpath = '/'.join(str.split(trajname, '/')[-2:])   #string with only the group and trajectory
 
-            if maxlistlen == len(traj_list):
+                #load actions:
+                pkl_file = trajname + '/joint_angles_traj{}.pkl'.format(traj_index)
+                if not os.path.isfile(pkl_file):
+                    nopkl_file += 1
+                    print 'no pkl file found, file no: ', nopkl_file
+                    continue
 
-                filename = 'traj_{0}_to_{1}' \
-                    .format(tf_start_ind,tf_start_ind + maxlistlen-1)
-                self.save_tf_record(filename, traj_list)
-                tf_start_ind += maxlistlen
-                traj_list = []
+                pkldata = cPickle.load(open(pkl_file, "rb"))
+                self.all_actions = pkldata['actions']
+                self.all_joint_angles = pkldata['jointangles']
+                self.all_endeffector_pos = pkldata['endeffector_pos']
 
-            if self.gif_dir != None and not donegif:
-                if len(traj_list) == ntraj_gifmax:
-                    create_gif.comp_video(traj_list, self.gif_dir + 'worker{}'.format(os.getpid()))
-                    print 'created gif, exiting'
-                    donegif = True
+                try:
+                    for i_src, src in enumerate(self.sourcedirs):  # loop over cameras: main, aux1, ..
+                        self.traj_dir_src = os.path.join(src, traj_subpath)
+                        self.step_from_to(i_src)
+                except More_than_one_image_except as e:
+                    print "more than one image in ", e.image_file
+                    i_more_than_one_image += 1
+                    continue
 
-            print 'processed {} trajectories'.format(len(traj_list))
+                traj_list.append(self.traj)
+                maxlistlen = 128
 
+                if maxlistlen == len(traj_list):
+
+                    filename = 'traj_{0}_to_{1}' \
+                        .format(tf_start_ind,tf_start_ind + maxlistlen-1)
+                    self.save_tf_record(filename, traj_list)
+                    tf_start_ind += maxlistlen
+                    traj_list = []
+
+                if self.gif_dir != None and not donegif:
+                    if len(traj_list) == ntraj_gifmax:
+                        create_gif.comp_video(traj_list, self.gif_dir + 'worker{}'.format(os.getpid()))
+                        print 'created gif, exiting'
+                        donegif = True
+
+                print 'processed {} trajectories'.format(len(traj_list))
+
+            except:
+                print "error occured"
+                num_errors += 1
 
         print 'done, {} more_than_one_image occurred:'.format(i_more_than_one_image)
+        print 'done, {} errors occurred:'.format(num_errors)
 
         return 'done'
 
@@ -299,7 +304,7 @@ def get_maxtraj(sourcedirs):
     return max_traj
 
 
-def start_parallel(conf, gif_dir, traj_name_list, crop_from_highres= True, start_end_grp = None):
+def start_parallel(conf, gif_dir, traj_name_list, n_workers, crop_from_highres= True, start_end_grp = None):
     """
     :param sourcedirs:
     :param tf_rec_dir:
@@ -314,7 +319,7 @@ def start_parallel(conf, gif_dir, traj_name_list, crop_from_highres= True, start
     itraj_start = 0
     n_traj = len(traj_name_list)
 
-    n_worker = 5
+    n_worker = n_workers
 
     traj_per_worker = int(n_traj / np.float32(n_worker))
     start_idx = [itraj_start+traj_per_worker * i for i in range(n_worker)]
@@ -390,6 +395,7 @@ def main():
     parser.add_argument('--start_gr', type=int, default=None, help='start group')
     parser.add_argument('--end_gr', type=int, default=None, help='end group')
     parser.add_argument('--no_parallel', type=bool, default=False, help='do not use parallel processing')
+    parser.add_argument('--n_workers', type=int, default=5, help='number of workers')
     args = parser.parse_args()
 
     conf_file = args.hyper
@@ -414,7 +420,7 @@ def main():
     traj_name_list = make_traj_name_list(conf, start_end_grp = start_end_grp)
 
     if parallel:
-        start_parallel(conf, gif_file, traj_name_list,
+        start_parallel(conf, gif_file, traj_name_list, args.n_workers,
                        crop_from_highres=True, start_end_grp=start_end_grp)
     else:
         tfrec_converter = TF_rec_converter(conf,
